@@ -156,6 +156,8 @@ def load_and_preprocess_data(instance_name):
 
 # Este bloque permite ejecutar el script directamente para hacer pruebas.
 if __name__ == '__main__':
+    pass
+    '''
     # Se configura el parser para aceptar el nombre del archivo desde la terminal.
     parser = argparse.ArgumentParser(
         description="Carga y preprocesa los datos de una instancia para el reto ASOCIO."
@@ -174,3 +176,4 @@ if __name__ == '__main__':
 
     if final_model_data:
         print("¡Datos cargados y procesados exitosamente!")
+    '''
