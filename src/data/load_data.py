@@ -37,6 +37,71 @@ def _create_parameter_P_ek(raw_data):
     
     return P_ek
 
+def _create_parameter_C_ed(raw_data):
+    """
+    Crea el parámetro C_ed (compatibilidad de escritorios por empleado).
+
+    Args:
+        raw_data (dict): El diccionario completo cargado desde el archivo JSON.
+
+    Returns:
+        dict: Un diccionario representando el parámetro C_ed.
+              Las claves son tuplas (empleado, escritorio) y los valores son 1 o 0.
+    """
+    # Se obtienen los datos necesarios del diccionario principal.
+    # Usar .get() con un valor por defecto previene errores si la clave no existe.
+    all_employees = raw_data.get('Employees', [])
+    all_desks = raw_data.get('Desks', [])
+    desk_compatibilities = raw_data.get('Desks_E', {})
+
+    # Se inicializa el diccionario que contendrá el parámetro.
+    C_ed = {}
+
+    # Se itera sobre cada combinación de empleado y escritorio.
+    for e in all_employees:
+        for d in all_desks:
+            # Se revisa si el escritorio 'd' está en la lista de escritorios
+            # compatibles para el empleado 'e'.
+            if d in desk_compatibilities.get(e, []):
+                C_ed[(e, d)] = 1
+            else:
+                C_ed[(e, d)] = 0
+                
+    return C_ed
+
+def _create_parameter_M_eg(raw_data):
+    """
+    Crea el parámetro M_eg (pertenencia de un empleado a un grupo).
+
+    Args:
+        raw_data (dict): El diccionario completo cargado desde el archivo JSON.
+
+    Returns:
+        dict: Un diccionario representando el parámetro M_eg.
+              Las claves son tuplas (empleado, grupo) y los valores son 1 o 0.
+    """
+    # Se obtienen los datos necesarios.
+    all_employees = raw_data.get('Employees', [])
+    all_groups = raw_data.get('Groups', [])
+    group_memberships = raw_data.get('Employees_G', {})
+
+    # Se inicializa el diccionario para el parámetro.
+    M_eg = {}
+
+    # Se itera sobre cada combinación de empleado y grupo.
+    for e in all_employees:
+        for g in all_groups:
+            # A diferencia de los otros parámetros, aquí la fuente de datos
+            # (group_memberships) está organizada por grupo.
+            # Por lo tanto, verificamos si el empleado 'e' está en la lista
+            # de miembros del grupo 'g'.
+            if e in group_memberships.get(g, []):
+                M_eg[(e, g)] = 1
+            else:
+                M_eg[(e, g)] = 0
+                
+    return M_eg
+
 
 def load_and_preprocess_data(instance_name):
     """
@@ -50,9 +115,12 @@ def load_and_preprocess_data(instance_name):
         dict: Un diccionario anidado que contiene los conjuntos y parámetros del modelo.
               Retorna None si ocurre un error al cargar el archivo.
     """
-    # Se asume que la carpeta 'data' está en el mismo nivel que la carpeta 'src'
-    # y que el script se ejecuta desde la raíz del proyecto.
-    file_path = os.path.join("data", instance_name)
+    # Obtener la ruta absoluta del directorio donde está este archivo (load_data.py)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Subir un nivel (a src/) y luego bajar a /data
+    root_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+    file_path = os.path.join(root_dir, 'data', instance_name)
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -64,6 +132,8 @@ def load_and_preprocess_data(instance_name):
     # Se centraliza la creación de todos los parámetros llamando a las
     # funciones ayudantes correspondientes.
     p_ek_parameter = _create_parameter_P_ek(raw_data)
+    c_ed_parameter = _create_parameter_C_ed(raw_data)
+    m_eg_parameter = _create_parameter_M_eg(raw_data)
     
     # Se organiza la salida en un diccionario claro y estructurado.
     model_data = {
@@ -76,6 +146,8 @@ def load_and_preprocess_data(instance_name):
         },
         'params': {
             'P_ek': p_ek_parameter,
+            'C_ed': c_ed_parameter,
+            'M_eg': m_eg_parameter,
         }
     }
     
