@@ -51,12 +51,24 @@ def main():
         print(f"\nValor Máximo de la Función Objetivo (Suma de Preferencias): {results['valor_objetivo']:.2f}")
         
         print("\n--- Días de Reunión por Grupo ---")
+        # Opciones para que pandas muestre la tabla completa
+        pd.set_option('display.width', 120)
         print(results['reuniones'].to_string(index=False))
         
-        print("\n--- Asignaciones de Escritorios por Empleado y Día ---")
-        # Se ordena el resultado para mejor legibilidad
-        sorted_assignments = results['asignaciones'].sort_values(by=['Dia', 'Empleado'])
-        print(sorted_assignments.to_string(index=False))
+        print("\n--- Plan Semanal de Asignaciones por Empleado ---")
+        
+        # Se toma el DataFrame de asignaciones original
+        df_asignaciones = results['asignaciones']
+        
+        # 1. Se crea una columna temporal que une el día y el escritorio para cada asignación
+        df_asignaciones['Asignacion_Diaria'] = df_asignaciones['Dia'] + ": " + df_asignaciones['Escritorio']
+        
+        # 2. Se agrupa por empleado y se unen todas sus asignaciones diarias en un solo texto
+        plan_semanal = df_asignaciones.groupby('Empleado')['Asignacion_Diaria'].apply(', '.join).reset_index()
+        plan_semanal.columns = ['Empleado', 'Asignaciones Semanales']
+        
+        # 3. Se imprime la tabla final con el nuevo formato
+        print(plan_semanal.to_string(index=False))
 
     else:
         print("3. El modelo no pudo encontrar una solución óptima.")

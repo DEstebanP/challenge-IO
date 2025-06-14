@@ -27,7 +27,7 @@ def _unique_desk_occupancy_rule(model, d, k):
     """
     Regla para la restricción de ocupación: Un escritorio es usado por máximo un empleado por día.
     """
-    return sum(model.X_edk[e, d, k] for e in model.Employees) <= 1
+    return sum(model.X_edk[e, d, k] for e in model.Employees) == 1
 
 def _unique_employee_assignment_rule(model, e, k):
     """
