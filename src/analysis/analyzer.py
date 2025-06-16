@@ -28,7 +28,7 @@ def _analyze_desk_occupancy(df_assignments, all_desks):
         for index, row in sorted_assignments.iterrows():
             print(f"  - {row['Escritorio']}: {row['Empleado']}")
 
-def _analyze_preference_mismatches(df_assignments, p_ek_param):
+def _analyze_preference_mismatches(df_assignments, s_ek_param):
     """Cuenta cuántas asignaciones ocurrieron en días no preferidos."""
     print("\n### 2. Análisis de Preferencias de Días ###")
     
@@ -37,7 +37,7 @@ def _analyze_preference_mismatches(df_assignments, p_ek_param):
         employee = row['Empleado']
         day = row['Dia']
         # Si el valor en P_ek para esta combinación es 0, es un "mismatch"
-        if p_ek_param.get((employee, day), 0) == 0:
+        if s_ek_param.get((employee, day), 0) == -0.5:
             mismatch_count += 1
             
     print(f"Se realizaron {mismatch_count} asignaciones en días NO preferidos por los empleados.")
@@ -108,6 +108,34 @@ def _analyze_full_group_attendance(df_assignments, df_meetings, raw_data):
         else:
             print(f"- Grupo {meeting_group}: NO CUMPLE. Solo asisten {num_attendees}/{total_members} miembros el día de su reunión ({meeting_day}). ❌")
 
+def _analyze_desk_compatibility(df_assignments, raw_data):
+    """
+    Verifica que cada asignación respete la lista de escritorios
+    compatibles del empleado (Desks_E).
+    """
+    print("\n### 5. Verificación de Compatibilidad de Escritorios (Desks_E) ###")
+    
+    desk_compatibilities = raw_data.get('Desks_E', {})
+    violations = []
+
+    # Iterar sobre cada asignación en la solución
+    for index, row in df_assignments.iterrows():
+        employee = row['Empleado']
+        desk = row['Escritorio']
+        
+        # Obtener la lista de escritorios permitidos para ese empleado
+        allowed_desks = desk_compatibilities.get(employee, [])
+        
+        # Si el escritorio asignado no está en la lista de permitidos, es una violación
+        if desk not in allowed_desks:
+            violations.append(f"  - Empleado {employee} fue asignado a {desk}, pero sus escritorios permitidos son: {allowed_desks}")
+
+    if not violations:
+        print("VERIFICACIÓN CUMPLIDA: Todas las asignaciones respetan la compatibilidad de escritorios. ✔️")
+    else:
+        print("¡ALERTA! Se encontraron asignaciones incompatibles con Desks_E: ❌")
+        for v in violations:
+            print(v)
 
 def analyze_solution(results, model_data, raw_data):
     """
@@ -126,9 +154,10 @@ def analyze_solution(results, model_data, raw_data):
     df_meetings = results['reuniones']
     
     _analyze_desk_occupancy(df_assignments, model_data['sets']['Desks'])
-    _analyze_preference_mismatches(df_assignments, model_data['params']['P_ek'])
+    _analyze_preference_mismatches(df_assignments, model_data['params']['S_ek'])
     _analyze_group_dispersion(df_assignments, raw_data)
     _analyze_full_group_attendance(df_assignments, df_meetings, raw_data)
+    _analyze_desk_compatibility(df_assignments, raw_data)
 
 
 # --- Ejemplo de cómo usar este script ---

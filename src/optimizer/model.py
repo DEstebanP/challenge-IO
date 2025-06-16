@@ -7,10 +7,10 @@ import pandas as pd
 
 def _objective_rule(model):
     """
-    Regla para la función objetivo: Maximizar las preferencias de días.
+    Regla para la nueva función objetivo: Maximizar la puntuación total (recompensas - penalizaciones).
     """
     return sum(
-        model.P_ek[e, k] * model.X_edk[e, d, k]
+        model.S_ek[e, k] * model.X_edk[e, d, k]
         for e in model.Employees
         for d in model.Desks
         for k in model.Days
@@ -27,7 +27,7 @@ def _unique_desk_occupancy_rule(model, d, k):
     """
     Regla para la restricción de ocupación: Un escritorio es usado por máximo un empleado por día.
     """
-    return sum(model.X_edk[e, d, k] for e in model.Employees) == 1
+    return sum(model.X_edk[e, d, k] for e in model.Employees) <= 1
 
 def _unique_employee_assignment_rule(model, e, k):
     """
@@ -63,8 +63,11 @@ def _process_results(model):
     """
     Procesa los resultados del modelo resuelto y los devuelve en un formato legible.
     """
-    if str(model.results.solver.status) != 'ok' or str(model.results.solver.termination_condition) != 'optimal':
-        print("No se encontró una solución óptima.")
+    acceptable_termination = [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible]
+    
+    # Se verifica que el solver haya terminado en uno de los estados aceptables.
+    if model.results.solver.termination_condition not in acceptable_termination:
+        print("El solver no terminó en un estado exitoso.")
         print(f"Estado del Solver: {model.results.solver.status}")
         print(f"Condición de Terminación: {model.results.solver.termination_condition}")
         return None
@@ -122,7 +125,7 @@ def build_and_solve(model_data):
     model.Groups = pyo.Set(initialize=model_data['sets']['Groups'])
 
     # Parámetros
-    model.P_ek = pyo.Param(model.Employees, model.Days, initialize=model_data['params']['P_ek'])
+    model.S_ek = pyo.Param(model.Employees, model.Days, initialize=model_data['params']['S_ek'])
     model.C_ed = pyo.Param(model.Employees, model.Desks, initialize=model_data['params']['C_ed'])
     model.M_eg = pyo.Param(model.Employees, model.Groups, initialize=model_data['params']['M_eg'])
 
@@ -147,6 +150,7 @@ def build_and_solve(model_data):
     
     # 4. Resolver el Modelo
     solver = pyo.SolverFactory('glpk')
+    solver.options['mipgap'] = 0.02
     model.results = solver.solve(model, tee=True) # tee=True muestra el log del solver
 
     print("Resolución finalizada.")

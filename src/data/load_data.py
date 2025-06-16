@@ -2,40 +2,38 @@ import json
 import argparse
 import os
 
-def _create_parameter_P_ek(raw_data):
+def _create_parameter_S_ek(raw_data, penalty_cost):
     """
-    Crea el parámetro P_ek a partir de los datos de la instancia.
-    Esta versión utiliza bucles for explícitos para mayor claridad en el proceso.
+    Crea el parámetro S_ek (puntuación de asignación) con una penalización.
 
     Args:
-        raw_data (dict): El diccionario cargado desde el archivo JSON de la instancia.
+        raw_data (dict): El diccionario completo cargado desde el archivo JSON.
+        penalty_cost (float): El valor del costo (penalización) por asignar
+                              un día no preferido. Debe ser un número positivo.
 
     Returns:
-        dict: Un diccionario representando el parámetro P_ek.
-              Las claves son tuplas (empleado, dia) y los valores son 1 o 0.
+        dict: Un diccionario representando el parámetro S_ek.
+              Las claves son tuplas (empleado, dia) y los valores son 1 o -C.
     """
-    # Se obtienen los conjuntos de empleados y días para construir el parámetro.
-    employees = raw_data.get('Employees', [])
-    days = raw_data.get('Days', [])
-    
-    # Se obtiene el diccionario de preferencias de días de los empleados.
+    # Se obtienen los datos necesarios
+    all_employees = raw_data.get('Employees', [])
+    all_days = raw_data.get('Days', [])
     employee_day_preferences = raw_data.get('Days_E', {})
 
-    # Inicializamos el diccionario para el parámetro P_ek
-    P_ek = {}
+    # Se inicializa el diccionario para el parámetro S_ek
+    S_ek = {}
 
-    # Se itera sobre cada empleado y cada día para construir la matriz completa.
-    for e in employees:
-        for k in days:
-            # Se verifica si el día 'k' está en la lista de días preferidos del empleado 'e'.
-            # Usar .get(e, []) es una buena práctica para evitar errores si un empleado
-            # no tuviera una entrada en el diccionario.
+    # Se itera sobre cada combinación posible
+    for e in all_employees:
+        for k in all_days:
+            # Si el día es preferido, la puntuación es 1 (la recompensa)
             if k in employee_day_preferences.get(e, []):
-                P_ek[(e, k)] = 1
+                S_ek[(e, k)] = 1.0
+            # Si el día NO es preferido, la puntuación es la penalización negativa
             else:
-                P_ek[(e, k)] = 0
+                S_ek[(e, k)] = -penalty_cost
     
-    return P_ek
+    return S_ek
 
 def _create_parameter_C_ed(raw_data):
     """
@@ -131,7 +129,7 @@ def load_and_preprocess_data(instance_name):
     
     # Se centraliza la creación de todos los parámetros llamando a las
     # funciones ayudantes correspondientes.
-    p_ek_parameter = _create_parameter_P_ek(raw_data)
+    s_ek_parameter = _create_parameter_S_ek(raw_data, 0.5)
     c_ed_parameter = _create_parameter_C_ed(raw_data)
     m_eg_parameter = _create_parameter_M_eg(raw_data)
     
@@ -145,7 +143,7 @@ def load_and_preprocess_data(instance_name):
             'Zones': raw_data.get('Zones', []),
         },
         'params': {
-            'P_ek': p_ek_parameter,
+            'S_ek': s_ek_parameter,
             'C_ed': c_ed_parameter,
             'M_eg': m_eg_parameter,
         }
@@ -156,8 +154,6 @@ def load_and_preprocess_data(instance_name):
 
 # Este bloque permite ejecutar el script directamente para hacer pruebas.
 if __name__ == '__main__':
-    pass
-    '''
     # Se configura el parser para aceptar el nombre del archivo desde la terminal.
     parser = argparse.ArgumentParser(
         description="Carga y preprocesa los datos de una instancia para el reto ASOCIO."
@@ -176,4 +172,5 @@ if __name__ == '__main__':
 
     if final_model_data:
         print("¡Datos cargados y procesados exitosamente!")
-    '''
+        print(final_model_data[0]['params']['S_ek'])
+
