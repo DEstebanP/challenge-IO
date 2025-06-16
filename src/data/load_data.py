@@ -151,7 +151,7 @@ def load_and_preprocess_data(instance_name):
         }
     }
     
-    return model_data
+    return model_data, raw_data
 
 
 # Este bloque permite ejecutar el script directamente para hacer pruebas.

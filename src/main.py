@@ -4,6 +4,7 @@ import pandas as pd
 # Importamos las funciones principales que hemos creado en los otros módulos.
 from data.load_data import load_and_preprocess_data
 from optimizer.model import build_and_solve
+from analysis.analyzer import analyze_solution
 
 def main():
     """
@@ -26,7 +27,7 @@ def main():
     print("----------------------------------------------------")
     print("1. Cargando y preprocesando datos...")
     
-    model_data = load_and_preprocess_data(args.file)
+    model_data, raw_data = load_and_preprocess_data(args.file)
 
     if not model_data:
         print("Finalizando ejecución debido a un error en la carga de datos.")
@@ -69,6 +70,10 @@ def main():
         
         # 3. Se imprime la tabla final con el nuevo formato
         print(plan_semanal.to_string(index=False))
+
+        # --- PASO 4: Analizar la solución ---
+        print("\n4. Analizando la solución...")
+        analyze_solution(results, model_data, raw_data)
 
     else:
         print("3. El modelo no pudo encontrar una solución óptima.")
