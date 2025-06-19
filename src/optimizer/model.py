@@ -149,8 +149,7 @@ def build_and_solve(model_data):
     print("Modelo construido. Iniciando la resolución...")
     
     # 4. Resolver el Modelo
-    solver = pyo.SolverFactory('glpk')
-    solver.options['mipgap'] = 0.02
+    solver = pyo.SolverFactory('cbc')
     model.results = solver.solve(model, tee=True) # tee=True muestra el log del solver
 
     print("Resolución finalizada.")
