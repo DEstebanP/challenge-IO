@@ -129,7 +129,7 @@ def load_and_preprocess_data(instance_name):
     
     # Se centraliza la creación de todos los parámetros llamando a las
     # funciones ayudantes correspondientes.
-    s_ek_parameter = _create_parameter_S_ek(raw_data, 0.5)
+    s_ek_parameter = _create_parameter_S_ek(raw_data, 1)
     c_ed_parameter = _create_parameter_C_ed(raw_data)
     m_eg_parameter = _create_parameter_M_eg(raw_data)
     

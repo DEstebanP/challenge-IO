@@ -37,7 +37,7 @@ def _analyze_preference_mismatches(df_assignments, s_ek_param):
         employee = row['Empleado']
         day = row['Dia']
         # Si el valor en P_ek para esta combinación es 0, es un "mismatch"
-        if s_ek_param.get((employee, day), 0) == -0.5:
+        if s_ek_param.get((employee, day), 0) == -1:
             mismatch_count += 1
             
     print(f"Se realizaron {mismatch_count} asignaciones en días NO preferidos por los empleados.")
