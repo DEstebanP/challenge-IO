@@ -7,14 +7,26 @@ import pandas as pd
 
 def _objective_rule(model):
     """
-    Regla para la nueva función objetivo: Maximizar la puntuación total (recompensas - penalizaciones).
+    Regla para la función objetivo que maximiza preferencias y minimiza inconsistencia.
     """
-    return sum(
+    # Término original de recompensa por preferencias
+    preference_score = sum(
         model.S_ek[e, k] * model.X_edk[e, d, k]
         for e in model.Employees
         for d in model.Desks
         for k in model.Days
     )
+    
+    # Nuevo término de penalización por inconsistencia
+    # Se suma cada vez que un vínculo (e,d) es activado
+    consistency_penalty = model.w_c * sum(
+        model.A_ed[e, d]
+        for e in model.Employees
+        for d in model.Desks
+    )
+    
+    # El objetivo es la recompensa menos la penalización
+    return preference_score - consistency_penalty
 
 def _attendance_window_rule(model, e):
     """
@@ -58,6 +70,13 @@ def _mandatory_meeting_attendance_rule(model, e, g, k):
     
     # Si pertenece, se aplica la regla de implicación: Y_gk=1 => sum(X_edk) >= 1
     return sum(model.X_edk[e, d, k] for d in model.Desks) >= model.Y_gk[g, k]
+
+def _consistency_link_rule(model, e, d):
+    """
+    Regla que activa A_ed si el empleado e usa el escritorio d al menos una vez.
+    """
+    # Suma los usos del escritorio 'd' por el empleado 'e' en toda la semana
+    return sum(model.X_edk[e, d, k] for k in model.Days) <= len(model.Days) * model.A_ed[e, d]
 
 def _process_results(model):
     """
@@ -128,10 +147,12 @@ def build_and_solve(model_data):
     model.S_ek = pyo.Param(model.Employees, model.Days, initialize=model_data['params']['S_ek'])
     model.C_ed = pyo.Param(model.Employees, model.Desks, initialize=model_data['params']['C_ed'])
     model.M_eg = pyo.Param(model.Employees, model.Groups, initialize=model_data['params']['M_eg'])
+    model.w_c = pyo.Param(initialize=model_data['params']['w_c'])
 
     # Variables de Decisión
     model.X_edk = pyo.Var(model.Employees, model.Desks, model.Days, domain=pyo.Binary)
     model.Y_gk = pyo.Var(model.Groups, model.Days, domain=pyo.Binary)
+    model.A_ed = pyo.Var(model.Employees, model.Desks, domain=pyo.Binary)
 
     # 3. Añadir Función Objetivo y Restricciones al Modelo
     
@@ -145,11 +166,13 @@ def build_and_solve(model_data):
     model.compatibility_constraint = pyo.Constraint(model.Employees, model.Desks, model.Days, rule=_compatibility_rule)
     model.meeting_uniqueness_constraint = pyo.Constraint(model.Groups, rule=_meeting_uniqueness_rule)
     model.mandatory_attendance_constraint = pyo.Constraint(model.Employees, model.Groups, model.Days, rule=_mandatory_meeting_attendance_rule)
+    model.consistency_constraint = pyo.Constraint(model.Employees, model.Desks, rule=_consistency_link_rule)
     
     print("Modelo construido. Iniciando la resolución...")
     
     # 4. Resolver el Modelo
     solver = pyo.SolverFactory('cbc')
+    #solver.options['ratioGap'] = 0.02
     model.results = solver.solve(model, tee=True) # tee=True muestra el log del solver
 
     print("Resolución finalizada.")

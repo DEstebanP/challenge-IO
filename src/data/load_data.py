@@ -28,7 +28,7 @@ def _create_parameter_S_ek(raw_data, penalty_cost):
         for k in all_days:
             # Si el día es preferido, la puntuación es 1 (la recompensa)
             if k in employee_day_preferences.get(e, []):
-                S_ek[(e, k)] = 1.0
+                S_ek[(e, k)] = 10
             # Si el día NO es preferido, la puntuación es la penalización negativa
             else:
                 S_ek[(e, k)] = -penalty_cost
@@ -146,6 +146,7 @@ def load_and_preprocess_data(instance_name):
             'S_ek': s_ek_parameter,
             'C_ed': c_ed_parameter,
             'M_eg': m_eg_parameter,
+            'w_c': 2 # Peso de la consistencia de escritorios
         }
     }
     
