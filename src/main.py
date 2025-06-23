@@ -1,11 +1,10 @@
-# main.py
-
 import argparse
 import pandas as pd
 
 # Importamos la función de carga de datos y el NUEVO solver del Paso 1
 from data.load_data import load_and_preprocess_data
-from optimizer.model import solve_schedule_model
+from optimizer.model.model import solve_schedule_model
+from optimizer.heuristics.anchor_assignment import assign_anchor_desks
 # La importación de analyze_solution ya no es necesaria en este paso
 
 def main():
@@ -68,6 +67,25 @@ def main():
     
     print("\n----------------------------------------------------")
     print("Paso 1 (Planificación Maestra de Horarios) finalizado.")
+    
+    print("\n3. Ejecutando Etapa 2: Asignación de Escritorios Ancla...")
+    
+    # Llamamos a la función que creamos, pasándole los datos crudos
+    anchor_assignments = assign_anchor_desks(raw_data)
+    
+    if not anchor_assignments:
+        print("La heurística no pudo asignar los escritorios ancla. Finalizando.")
+        return
+        
+    print("   ¡Asignación de Escritorios Ancla Generada Exitosamente!")
+    
+    print("\n--- Muestra de Escritorios Ancla Asignados (Resultado Etapa 2) ---")
+    # Imprimimos solo los primeros 5 para no llenar la consola
+    for i, (employee, desk) in enumerate(anchor_assignments.items()):
+        if i >= 5:
+            break
+        print(f"- {employee}: {desk}")
+    print(f"  ... y {len(anchor_assignments) - 5} más.")
 
 
 if __name__ == "__main__":
