@@ -1,92 +1,73 @@
+# main.py
+
 import argparse
 import pandas as pd
 
-# Importamos la función de carga de datos y el NUEVO solver del Paso 1
+# Importar funciones de todos los módulos
 from data.load_data import load_and_preprocess_data
 from optimizer.model.model import solve_schedule_model
 from optimizer.heuristics.anchor_assignment import assign_anchor_desks
-# La importación de analyze_solution ya no es necesaria en este paso
+from optimizer.model.daily_assigner import solve_daily_assignment_model
+from analysis.analyzer import analyze_solution
 
 def main():
     """
-    Función principal que orquesta la ejecución del Paso 1: Planificación Maestra de Horarios.
+    Función principal que orquesta la ejecución de la estrategia por etapas.
     """
-    parser = argparse.ArgumentParser(
-        description="Script para ejecutar el Paso 1 del reto de asignación de puestos ASOCIO."
-    )
-    parser.add_argument(
-        "--file",
-        type=str,
-        required=True,
-        help='Nombre del archivo de la instancia JSON. Ejemplo: "instance10.json"'
-    )
+    parser = argparse.ArgumentParser(description="Script para resolver el reto ASOCIO por etapas.")
+    parser.add_argument("--file", type=str, required=True, help='Instancia JSON a resolver.')
     args = parser.parse_args()
 
-    # --- ETAPA 1, PASO 1: Cargar datos de la instancia ---
+    # --- Carga de Datos (Paso 0) ---
     print(f"Iniciando proceso para la instancia: {args.file}")
     print("----------------------------------------------------")
-    print("1. Cargando y preprocesando datos...")
-    
     model_data, raw_data = load_and_preprocess_data(args.file)
+    if not model_data: return
 
-    if not model_data:
-        print("Finalizando ejecución debido a un error en la carga de datos.")
-        return
-
-    print("   Datos cargados exitosamente.")
-
-    # --- ETAPA 1, PASO 2: Construir y resolver el modelo de horarios ---
-    print("\n2. Construyendo y resolviendo el modelo de Planificación de Horarios (Paso 1)...")
-    
+    # --- PASO 1: Planificación Maestra de Horarios ---
+    print("\n--- PASO 1: Resolviendo Planificación de Horarios ---")
     schedule_results = solve_schedule_model(model_data)
+    if not schedule_results: return
+    print("   ...Horario semanal y días de reunión definidos.")
 
-    # --- ETAPA 1, PASO 3: Presentar los resultados del horario ---
+    # --- PASO 2: Asignación de Escritorios Ancla ---
+    print("\n--- PASO 2: Asignando Escritorios Ancla ---")
+    anchor_map = assign_anchor_desks(raw_data)
+    print("   ...Escritorios ancla asignados.")
+
+    # --- PASO 3: Asignación Diaria Optimizada ---
+    print("\n--- PASO 3: Resolviendo Asignaciones Diarias Optimizadas ---")
+    weights = {'aislamiento': 1000, 'consistencia': 1}
+    final_assignments = []
+    
+    # Bucle para resolver la asignación de cada día
+    for day, attending_employees in schedule_results['horario_semanal'].items():
+        if not attending_employees: continue
+        print(f"   - Resolviendo para el día: {day} ({len(attending_employees)} empleados)...")
+        daily_assignments = solve_daily_assignment_model(
+            day, attending_employees, anchor_map, raw_data, weights
+        )
+        final_assignments.extend(daily_assignments)
+    
+    print("   ...Asignaciones diarias finalizadas.")
+
+    # --- PASO 4: Presentación y Análisis de la Solución Final ---
     print("\n----------------------------------------------------")
-    if schedule_results:
-        print("3. ¡Planificación Maestra de Horarios Generada Exitosamente!")
-        
-        # Mostrar valor objetivo
-        obj_value = schedule_results['valor_objetivo']
-        print(f"\nValor Objetivo (Suma Puntuaciones Preferencia): {obj_value:.2f}")
+    print("PROCESO FINALIZADO. Evaluando solución completa:")
+    
+    # Empaquetar resultados en el formato esperado por el analizador
+    df_final_assignments = pd.DataFrame(final_assignments)
+    df_meetings = pd.DataFrame(
+        list(schedule_results['dias_reunion'].items()), 
+        columns=['Grupo', 'Dia_Reunion']
+    )
+    final_results_dict = {
+        'asignaciones': df_final_assignments,
+        'reuniones': df_meetings
+    }
 
-        # Mostrar días de reunión
-        print("\n--- Días de Reunión por Grupo ---")
-        df_meetings = pd.DataFrame(
-            list(schedule_results['dias_reunion'].items()), 
-            columns=['Grupo', 'Dia_Reunion']
-        ).sort_values(by='Grupo')
-        print(df_meetings.to_string(index=False))
-        
-        # Mostrar quién asiste cada día
-        print("\n--- Asistencia Confirmada por Día ---")
-        for day, employees in schedule_results['horario_semanal'].items():
-            print(f"- {day}: {len(employees)} empleados -> {', '.join(sorted(employees))}")
-            
-    else:
-        print("3. El modelo no pudo generar un horario.")
-    
-    print("\n----------------------------------------------------")
-    print("Paso 1 (Planificación Maestra de Horarios) finalizado.")
-    
-    print("\n3. Ejecutando Etapa 2: Asignación de Escritorios Ancla...")
-    
-    # Llamamos a la función que creamos, pasándole los datos crudos
-    anchor_assignments = assign_anchor_desks(raw_data)
-    
-    if not anchor_assignments:
-        print("La heurística no pudo asignar los escritorios ancla. Finalizando.")
-        return
-        
-    print("   ¡Asignación de Escritorios Ancla Generada Exitosamente!")
-    
-    print("\n--- Muestra de Escritorios Ancla Asignados (Resultado Etapa 2) ---")
-    # Imprimimos solo los primeros 5 para no llenar la consola
-    for i, (employee, desk) in enumerate(anchor_assignments.items()):
-        if i >= 5:
-            break
-        print(f"- {employee}: {desk}")
-    print(f"  ... y {len(anchor_assignments) - 5} más.")
-
+    # Llamar al analizador para una evaluación completa
+    analyze_solution(final_results_dict, model_data, raw_data)
 
 if __name__ == "__main__":
     main()

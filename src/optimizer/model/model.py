@@ -1,5 +1,4 @@
 import pyomo.environ as pyo
-import pandas as pd
 
 # --- Lógica de Restricciones para el Modelo de Horarios ---
 
@@ -30,12 +29,20 @@ def _meeting_uniqueness_rule_step1(model, g):
 def _mandatory_meeting_attendance_rule_step1(model, e, g, k):
     """
     Restricción de Vínculo: Si es día de reunión del grupo 'g', todos sus miembros 'e' deben asistir.
-    La asistencia del empleado (Asiste_ek) debe ser al menos tan grande como la variable de reunión (Y_gk).
     """
     if model.M_eg[e, g] == 0:
-        return pyo.Constraint.Skip  # La restricción no aplica si el empleado no está en el grupo
+        return pyo.Constraint.Skip
     
     return model.Asiste_ek[e, k] >= model.Y_gk[g, k]
+
+def _capacity_constraint_rule(model, k):
+    """
+    NUEVA RESTRICCIÓN de Capacidad: El número de empleados que asisten en un día 'k'
+    no puede exceder el número total de escritorios disponibles.
+    """
+    employees_attending_on_day_k = sum(model.Asiste_ek[e, k] for e in model.Employees)
+    total_desks = len(model.Desks)
+    return employees_attending_on_day_k <= total_desks
 
 # --- Procesador de Resultados para el Modelo de Horarios ---
 
@@ -50,15 +57,11 @@ def _process_schedule_results(model):
         print(f"Condición de Terminación: {model.results.solver.termination_condition}")
         return None
 
-    # Procesar días de reunión
     meeting_days = {g: k for g in model.Groups for k in model.Days if pyo.value(model.Y_gk[g, k]) == 1}
-    
-    # Procesar horario de asistencia
     weekly_schedule = {
         k: [e for e in model.Employees if pyo.value(model.Asiste_ek[e, k]) == 1]
         for k in model.Days
     }
-
     return {
         'dias_reunion': meeting_days,
         'horario_semanal': weekly_schedule,
@@ -76,18 +79,16 @@ def solve_schedule_model(model_data):
     model = pyo.ConcreteModel(name="Planificacion_Horarios_Step1")
 
     # --- Sets (Conjuntos) ---
-    # Notar que no necesitamos escritorios ni zonas en este paso
     model.Employees = pyo.Set(initialize=model_data['sets']['Employees'])
+    model.Desks = pyo.Set(initialize=model_data['sets']['Desks']) # Necesario para len()
     model.Days = pyo.Set(initialize=model_data['sets']['Days'])
     model.Groups = pyo.Set(initialize=model_data['sets']['Groups'])
 
     # --- Parameters (Parámetros) ---
-    # Notar que no necesitamos el parámetro de compatibilidad de escritorios C_ed
     model.S_ek = pyo.Param(model.Employees, model.Days, initialize=model_data['params']['S_ek'])
     model.M_eg = pyo.Param(model.Employees, model.Groups, initialize=model_data['params']['M_eg'])
 
     # --- Variables de Decisión ---
-    # La variable de asignación ahora es mucho más simple: ¿asiste o no?
     model.Asiste_ek = pyo.Var(model.Employees, model.Days, domain=pyo.Binary)
     model.Y_gk = pyo.Var(model.Groups, model.Days, domain=pyo.Binary)
 
@@ -99,11 +100,13 @@ def solve_schedule_model(model_data):
     model.meeting_uniqueness_constraint = pyo.Constraint(model.Groups, rule=_meeting_uniqueness_rule_step1)
     model.mandatory_attendance_constraint = pyo.Constraint(model.Employees, model.Groups, model.Days, rule=_mandatory_meeting_attendance_rule_step1)
     
+    # RESTRICCIÓN AÑADIDA
+    model.capacity_constraint = pyo.Constraint(model.Days, rule=_capacity_constraint_rule)
+    
     print("Modelo de horarios construido. Resolviendo...")
     
-    # --- Resolver y Procesar ---
     solver = pyo.SolverFactory('cbc')
-    model.results = solver.solve(model, tee=False) # tee=False para no mostrar el log detallado
+    model.results = solver.solve(model, tee=False)
     
     print("Resolución finalizada.")
     
