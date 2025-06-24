@@ -100,6 +100,23 @@ def _create_parameter_M_eg(raw_data):
                 
     return M_eg
 
+def _create_parameter_L_dz(raw_data):
+    """
+    Crea el parámetro L_dz (pertenencia de un escritorio a una zona).
+    """
+    all_desks = raw_data.get('Desks', [])
+    all_zones = raw_data.get('Zones', [])
+    zone_to_desks_map = raw_data.get('Desks_Z', {})
+
+    L_dz = {}
+    for d in all_desks:
+        for z in all_zones:
+            desks_in_zone = zone_to_desks_map.get(z, [])
+            if d in desks_in_zone:
+                L_dz[(d, z)] = 1
+            else:
+                L_dz[(d, z)] = 0
+    return L_dz
 
 def load_and_preprocess_data(instance_name):
     """
@@ -132,6 +149,15 @@ def load_and_preprocess_data(instance_name):
     s_ek_parameter = _create_parameter_S_ek(raw_data, 1)
     c_ed_parameter = _create_parameter_C_ed(raw_data)
     m_eg_parameter = _create_parameter_M_eg(raw_data)
+    l_dz_parameter = _create_parameter_L_dz(raw_data)
+    
+    # Crear una lista de tuplas (e, d) solo para las asignaciones permitidas
+    # basado en los datos de compatibilidad del archivo JSON ('Desks_E').
+    valid_assignments_list = []
+    desk_compatibilities = raw_data.get('Desks_E', {})
+    for employee, allowed_desks in desk_compatibilities.items():
+        for desk in allowed_desks:
+            valid_assignments_list.append((employee, desk))
     
     # Se organiza la salida en un diccionario claro y estructurado.
     model_data = {
@@ -141,11 +167,13 @@ def load_and_preprocess_data(instance_name):
             'Days': raw_data.get('Days', []),
             'Groups': raw_data.get('Groups', []),
             'Zones': raw_data.get('Zones', []),
+            'Valid_Assignments': valid_assignments_list
         },
         'params': {
             'S_ek': s_ek_parameter,
             'C_ed': c_ed_parameter,
             'M_eg': m_eg_parameter,
+            'L_dz': l_dz_parameter,
         }
     }
     

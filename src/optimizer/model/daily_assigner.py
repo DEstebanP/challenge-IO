@@ -1,96 +1,132 @@
 import pyomo.environ as pyo
+import pandas as pd
 
-def solve_daily_assignment_model(day, attending_employees, anchor_map, raw_data, weights):
+# --- Funciones "Rule" para el Modelo de Asignación Diaria ---
+
+# --- Objetivo: Minimizar Aislamiento y Desviación de Ancla ---
+def _daily_objective_rule(model):
     """
-    Resuelve el modelo de asignación optimizada para un único día.
-    El objetivo es minimizar una función ponderada de aislamiento y falta de consistencia.
-
-    Args:
-        day (str): El día que se está resolviendo (ej: "L").
-        attending_employees (list): Lista de empleados que asisten ese día.
-        anchor_map (dict): Mapeo de empleado a su escritorio ancla.
-        raw_data (dict): Datos crudos del JSON.
-        weights (dict): Pesos para la función objetivo ('aislamiento', 'consistencia').
-
-    Returns:
-        list: Una lista de diccionarios con las asignaciones del día.
+    Función Objetivo: Minimizar una suma ponderada de penalizaciones.
+    La mayor penalización es por aislar a un empleado.
     """
-    model = pyo.ConcreteModel(name=f"Asignacion_Diaria_{day}")
-
-    # --- Sets Dinámicos (solo para los que asisten hoy) ---
-    model.Attending_Employees = pyo.Set(initialize=attending_employees)
-    model.All_Desks = pyo.Set(initialize=raw_data.get('Desks', []))
-    model.All_Zones = pyo.Set(initialize=raw_data.get('Zones', []))
+    # Penalización total por cada caso de aislamiento detectado
+    isolation_penalty = model.w_aislamiento * sum(
+        model.I_gz[g, z] for g in model.Groups for z in model.Zones
+    )
     
-    employee_to_group = {emp: g for g, emps in raw_data.get('Employees_G', {}).items() for emp in emps}
-    attending_groups_set = {employee_to_group[e] for e in attending_employees if e in employee_to_group}
-    model.Attending_Groups = pyo.Set(initialize=list(attending_groups_set))
-
-    # --- Parámetros ---
-    desk_to_zone = {d: z for z, desks in raw_data.get('Desks_Z', {}).items() for d in desks}
+    # Penalización total por cada empleado que no es asignado a su escritorio ancla
+    consistency_penalty = model.w_consistencia * sum(
+        model.SeDesvia_e[e] for e in model.Attending_Employees
+    )
     
-    # Pares válidos de (empleado, escritorio) solo para los que asisten y son compatibles
-    compatible_pairs = [
-        (e, d) for e in model.Attending_Employees 
-        for d in raw_data.get('Desks_E', {}).get(e, [])
-    ]
-    model.Valid_Pairs = pyo.Set(initialize=compatible_pairs, dimen=2)
+    return isolation_penalty + consistency_penalty
 
-    # --- Variables de Decisión ---
-    model.X_ed = pyo.Var(model.Valid_Pairs, domain=pyo.Binary)
-    model.I_gz = pyo.Var(model.Attending_Groups, model.All_Zones, domain=pyo.Binary)
+# --- Restricciones de Asignación Fundamentales ---
+def _mandatory_assignment_rule(model, e):
+    """Cada empleado que asiste hoy DEBE ser asignado a exactamente un escritorio."""
+    return sum(model.X_ed[e, d] for d in model.CompatibleDesks[e]) == 1
 
-    # --- Función Objetivo: MINIMIZAR penalizaciones ---
-    def objective_rule(m):
-        # Penalización por Aislamiento (muy alta)
-        penalizacion_aislamiento = weights['aislamiento'] * sum(m.I_gz[g, z] for g in m.Attending_Groups for z in m.All_Zones)
-        
-        # Penalización por Consistencia (baja)
-        # Se suma 1 por cada empleado que NO es asignado a su escritorio ancla
-        penalizacion_consistencia = weights['consistencia'] * sum(
-            m.X_ed[e, d] for e, d in m.Valid_Pairs if d != anchor_map.get(e)
-        )
-        return penalizacion_aislamiento + penalizacion_consistencia
-    model.objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
+def _unique_desk_occupancy_rule_step3(model, d):
+    """Cada escritorio es usado por máximo una persona."""
+    # Sumamos solo sobre los empleados que asisten hoy y son compatibles con el escritorio 'd'
+    return sum(model.X_ed[e, d] for e in model.Attending_Employees if (e,d) in model.ValidDailyAssignments) <= 1
 
-    # --- Restricciones Fundamentales ---
-    # 1. A cada empleado que asiste se le asigna un único escritorio
-    def one_desk_per_employee_rule(m, e):
-        return sum(m.X_ed[e, d_] for d_ in m.All_Desks if (e, d_) in m.Valid_Pairs) == 1
-    model.one_desk_constraint = pyo.Constraint(model.Attending_Employees, rule=one_desk_per_employee_rule)
+# --- Restricciones para la Lógica de Aislamiento ---
+def _isolation_logic_rule1(model, g, z):
+    """Regla 1 de Aislamiento: Exclusividad mutua."""
+    return model.I_gz[g, z] + model.GE2_gz[g, z] <= 1
 
-    # 2. Cada escritorio es usado por máximo un empleado
-    def one_employee_per_desk_rule(m, d):
-        return sum(m.X_ed[e, d] for e in m.Attending_Employees if (e, d) in m.Valid_Pairs) <= 1
-    model.one_employee_constraint = pyo.Constraint(model.All_Desks, rule=one_employee_per_desk_rule)
- 
-    # --- Restricciones para el Aislamiento ---
-    def get_employees_in_group_in_zone(m, g, z):
-        return [e for e in m.Attending_Employees if employee_to_group.get(e) == g and (e, desk_to_zone.get(e)) == (e,z)]
+def _isolation_logic_rule2(model, g, z):
+    """Regla 2 de Aislamiento: Vínculo de límite inferior."""
+    count = sum(model.X_ed[e, d] for e, d in model.ValidDailyAssignments 
+                if model.M_eg[e, g] == 1 and model.L_dz[d, z] == 1)
+    return count >= model.I_gz[g, z] + 2 * model.GE2_gz[g, z]
 
-    # I_gz se activa si exactamente un miembro del grupo g está en la zona z
-    def isolation_link_rule_1(m, g, z):
-        sum_expr = sum(m.X_ed[e, d] for e, d in m.Valid_Pairs if employee_to_group.get(e) == g and desk_to_zone.get(d) == z)
-        return sum_expr >= m.I_gz[g, z]
-    model.isolation_link_1 = pyo.Constraint(model.Attending_Groups, model.All_Zones, rule=isolation_link_rule_1)
+def _isolation_logic_rule3(model, g, z):
+    """Regla 3 de Aislamiento: Vínculo de límite superior (Big M)."""
+    count = sum(model.X_ed[e, d] for e, d in model.ValidDailyAssignments
+                if model.M_eg[e, g] == 1 and model.L_dz[d, z] == 1)
+    M = len(model.Attending_Employees)
+    return count <= model.I_gz[g, z] + M * model.GE2_gz[g, z]
 
-    def isolation_link_rule_2(m, g, z):
-        sum_expr = sum(m.X_ed[e, d] for e, d in m.Valid_Pairs if employee_to_group.get(e) == g and desk_to_zone.get(d) == z)
-        # Si la suma es 0 o >= 2, I_gz debe ser 0. Si la suma es 1, I_gz puede ser 1.
-        return sum_expr - 1 <= len(m.Attending_Employees) * (1 - m.I_gz[g, z])
-    model.isolation_link_2 = pyo.Constraint(model.Attending_Groups, model.All_Zones, rule=isolation_link_rule_2)
+# --- Restricción para la Lógica de Consistencia ---
+def _consistency_link_rule_step3(model, e):
+    """
+    Regla de vínculo para la consistencia: Activa SeDesvia_e si el empleado 'e'
+    no es asignado a su escritorio ancla.
+    """
+    anchor_desk = model.AnchorAssignments[e]
     
-    # --- Resolver el modelo del día ---
+    # Si el escritorio ancla no es compatible con el empleado, no se puede forzar la consistencia.
+    if anchor_desk is None or (e, anchor_desk) not in model.ValidDailyAssignments:
+        # Forzamos la desviación si el ancla no es válida
+        return model.SeDesvia_e[e] == 1
+
+    # La bandera de desviación se activa (>=1) si la asignación al ancla es 0.
+    # Como la variable es binaria, la forzará a ser 1.
+    return model.SeDesvia_e[e] >= 1 - model.X_ed[e, anchor_desk]
+
+# --- Función Principal del Módulo ---
+def solve_daily_assignment_model(daily_data):
+    """
+    Construye y resuelve el modelo de Pyomo para la asignación de un solo día (Paso 3).
+    """
+    model = pyo.ConcreteModel(name="Asignacion_Diaria_Step3")
+
+    # --- Sets (Conjuntos para este día) ---
+    model.Attending_Employees = pyo.Set(initialize=daily_data['sets']['Attending_Employees'])
+    model.Desks = pyo.Set(initialize=daily_data['sets']['Desks'])
+    model.Groups = pyo.Set(initialize=daily_data['sets']['Groups'])
+    model.Zones = pyo.Set(initialize=daily_data['sets']['Zones'])
+    
+    # Set optimizado de asignaciones válidas solo para los empleados que asisten hoy
+    model.ValidDailyAssignments = pyo.Set(
+        initialize=daily_data['sets']['Valid_Daily_Assignments'], 
+        dimen=2
+    )
+    # Un set auxiliar para que la restricción de asignación sea más eficiente
+    model.CompatibleDesks = pyo.Set(
+        model.Attending_Employees, 
+        initialize=lambda m, e: [d for (emp, d) in m.ValidDailyAssignments if emp == e]
+    )
+
+    # --- Parameters (Parámetros para este día) ---
+    model.M_eg = pyo.Param(model.Attending_Employees, model.Groups, initialize=daily_data['params']['M_eg'])
+    model.L_dz = pyo.Param(model.Desks, model.Zones, initialize=daily_data['params']['L_dz'])
+    model.AnchorAssignments = pyo.Param(model.Attending_Employees, within=pyo.Any, initialize=daily_data['params']['Anchor_Assignments'])
+    model.w_aislamiento = pyo.Param(initialize=daily_data['params']['w_aislamiento'])
+    model.w_consistencia = pyo.Param(initialize=daily_data['params']['w_consistencia'])
+
+    # --- Variables de Decisión (para este día) ---
+    model.X_ed = pyo.Var(model.ValidDailyAssignments, domain=pyo.Binary)
+    model.I_gz = pyo.Var(model.Groups, model.Zones, domain=pyo.Binary)
+    model.GE2_gz = pyo.Var(model.Groups, model.Zones, domain=pyo.Binary)
+    model.SeDesvia_e = pyo.Var(model.Attending_Employees, domain=pyo.Binary)
+
+    # --- Función Objetivo ---
+    model.objective = pyo.Objective(rule=_daily_objective_rule, sense=pyo.minimize)
+
+    # --- Restricciones ---
+    model.mandatory_assignment = pyo.Constraint(model.Attending_Employees, rule=_mandatory_assignment_rule)
+    model.unique_desk_occupancy = pyo.Constraint(model.Desks, rule=_unique_desk_occupancy_rule_step3)
+    model.isolation_logic1 = pyo.Constraint(model.Groups, model.Zones, rule=_isolation_logic_rule1)
+    model.isolation_logic2 = pyo.Constraint(model.Groups, model.Zones, rule=_isolation_logic_rule2)
+    model.isolation_logic3 = pyo.Constraint(model.Groups, model.Zones, rule=_isolation_logic_rule3)
+    model.consistency_link = pyo.Constraint(model.Attending_Employees, rule=_consistency_link_rule_step3)
+
+    # --- Resolver ---
     solver = pyo.SolverFactory('cbc')
-    solver.solve(model, tee=False)
+    solver.options['seconds'] = 60 # Límite de 60 segundos por día
+    results = solver.solve(model, tee=False)
 
-    # --- Procesar y devolver los resultados del día ---
-    assignments = []
-    # Itera sobre las variables de asignación (X_ed)
-    for (e, d), var in model.X_ed.items():
-        # Se obtiene el valor de la variable de forma segura
-        val = pyo.value(var) 
-        # Se comprueba que el valor no sea nulo y que sea 1 (usando round para seguridad numérica)
-        if val is not None and round(val) == 1:
-            assignments.append({'Empleado': e, 'Escritorio': d, 'Dia': day})
-    return assignments
+    # --- Procesar Resultados Diarios (simplificado) ---
+    if results.solver.termination_condition not in [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible]:
+        print(f"  -> El día {daily_data['day']} no tuvo solución factible.")
+        return None
+
+    final_assignments = []
+    for (e, d) in model.ValidDailyAssignments:
+        if pyo.value(model.X_ed[e, d], exception=False) >= 0.99:
+            final_assignments.append({'Empleado': e, 'Escritorio': d, 'Dia': daily_data['day']})
+
+    return pd.DataFrame(final_assignments)
