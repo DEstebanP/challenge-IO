@@ -35,38 +35,6 @@ def _create_parameter_S_ek(raw_data, penalty_cost):
     
     return S_ek
 
-def _create_parameter_C_ed(raw_data):
-    """
-    Crea el parámetro C_ed (compatibilidad de escritorios por empleado).
-
-    Args:
-        raw_data (dict): El diccionario completo cargado desde el archivo JSON.
-
-    Returns:
-        dict: Un diccionario representando el parámetro C_ed.
-              Las claves son tuplas (empleado, escritorio) y los valores son 1 o 0.
-    """
-    # Se obtienen los datos necesarios del diccionario principal.
-    # Usar .get() con un valor por defecto previene errores si la clave no existe.
-    all_employees = raw_data.get('Employees', [])
-    all_desks = raw_data.get('Desks', [])
-    desk_compatibilities = raw_data.get('Desks_E', {})
-
-    # Se inicializa el diccionario que contendrá el parámetro.
-    C_ed = {}
-
-    # Se itera sobre cada combinación de empleado y escritorio.
-    for e in all_employees:
-        for d in all_desks:
-            # Se revisa si el escritorio 'd' está en la lista de escritorios
-            # compatibles para el empleado 'e'.
-            if d in desk_compatibilities.get(e, []):
-                C_ed[(e, d)] = 1
-            else:
-                C_ed[(e, d)] = 0
-                
-    return C_ed
-
 def _create_parameter_M_eg(raw_data):
     """
     Crea el parámetro M_eg (pertenencia de un empleado a un grupo).
@@ -171,7 +139,6 @@ def load_and_preprocess_data(instance_name):
         },
         'params': {
             'S_ek': s_ek_parameter,
-            'C_ed': c_ed_parameter,
             'M_eg': m_eg_parameter,
             'L_dz': l_dz_parameter,
         }

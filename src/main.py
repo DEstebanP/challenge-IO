@@ -50,8 +50,6 @@ def main():
             
         print(f"   - Resolviendo para el día: {day} ({len(attending_employees)} empleados)...")
 
-        # --- INICIO DE LA MODIFICACIÓN ---
-
         # 1. Preparamos un diccionario con los datos específicos para este día
         daily_data = {
             'day': day,
