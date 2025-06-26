@@ -1,15 +1,16 @@
-def assign_anchor_desks(raw_data):
+def assign_anchor_desks(raw_data, risk_data):
     """
-    Asigna un escritorio "ancla" a cada empleado usando un algoritmo "greedy"
-    que prioriza a los empleados con menos opciones y equilibra la carga.
+    Asigna un escritorio "ancla" a cada empleado usando una heurística estratégica.
+    Prioriza a los empleados con mayor riesgo de aislamiento y les asigna el
+    escritorio recomendado que mejor equilibre la carga.
 
     Args:
-        raw_data (dict): El diccionario completo cargado desde el archivo JSON,
-                         que contiene 'Employees', 'Desks' y 'Desks_E'.
+        raw_data (dict): El diccionario con los datos crudos del JSON.
+        risk_data (dict): El diccionario con los resultados de la Etapa 0, que contiene
+                          el 'risk_index' y la lista de 'recommended_desks' por empleado.
 
     Returns:
         dict: Un diccionario que mapea cada ID de empleado a su ID de escritorio ancla.
-              Ejemplo: {'E0': 'D5', 'E1': 'D8', ...}
     """
     
     # --- Extracción de Datos ---
@@ -17,47 +18,49 @@ def assign_anchor_desks(raw_data):
     all_desks = raw_data.get('Desks', [])
     desk_compatibilities = raw_data.get('Desks_E', {})
 
-    # --- Paso 1: Calcular la Flexibilidad de Cada Empleado ---
-    # Creamos una lista de tuplas (numero_de_opciones, id_del_empleado)
-    # para poder ordenarla fácilmente.
-    employee_options = []
+    # --- Paso 1: Recopilar Datos para el Ordenamiento ---
+    # Creamos una lista de tuplas con toda la información necesaria para ordenar:
+    # (índice de riesgo, número de opciones, id del empleado)
+    employee_priority_list = []
     for e in all_employees:
         num_options = len(desk_compatibilities.get(e, []))
-        employee_options.append((num_options, e))
+        # Obtenemos el riesgo del diccionario generado en la Etapa 0
+        risk_index = risk_data.get(e, {}).get('risk_index', 1.0) # Por defecto, riesgo máximo
+        employee_priority_list.append((risk_index, num_options, e))
 
-    # --- Paso 2: Ordenar por Escasez ---
-    # Ordenamos la lista. Python ordena las tuplas por su primer elemento por defecto,
-    # así que los empleados con menos opciones quedarán al principio.
-    employee_options.sort()
+    # --- Paso 2: Ordenamiento Estratégico (Doble Criterio) ---
+    # Usamos una clave de ordenamiento personalizada:
+    # 1. Ordena por el índice de riesgo en orden DESCENDENTE (el -x[0] invierte el orden).
+    # 2. Si hay empate en el riesgo, ordena por el número de opciones en orden ASCENDENTE (x[1]).
+    employee_priority_list.sort(key=lambda x: (-x[0], x[1]))
 
-    # --- Paso 3: Inicializar Contadores y Estructura de Resultados ---
-    # Un diccionario para contar cuántos empleados han sido anclados a cada escritorio.
+    # --- Paso 3: Inicializar Contadores y Resultados ---
     desk_usage_counts = {desk: 0 for desk in all_desks}
-    # El diccionario final que contendrá las asignaciones.
     anchor_desk_assignments = {}
 
-    # --- Paso 4: Asignar Iterativamente ---
-    # Recorremos la lista ordenada de empleados, del más restringido al más flexible.
-    for num_options, employee_id in employee_options:
+    # --- Paso 4: Asignar Iterativamente con la Nueva Lógica ---
+    # Recorremos la lista ya ordenada estratégicamente.
+    for risk, num_options, employee_id in employee_priority_list:
         
-        compatible_desks = desk_compatibilities.get(employee_id, [])
+        # Obtenemos la lista de los mejores escritorios recomendados de la Etapa 0
+        recommended_desks = risk_data.get(employee_id, {}).get('recommended_desks', [])
         
-        # Caso de seguridad: si un empleado no tiene escritorios compatibles.
-        if not compatible_desks:
-            anchor_desk_assignments[employee_id] = None # O se podría lanzar un error
+        # Si no hay escritorios recomendados o compatibles, asignamos None.
+        if not recommended_desks:
+            anchor_desk_assignments[employee_id] = None
             continue
 
-        # Lógica para encontrar el mejor escritorio:
-        # De la lista de escritorios compatibles para este empleado, encontramos
-        # aquel que tenga el menor número de asignaciones hasta el momento.
-        # La función min() con una clave lambda es una forma elegante y eficiente de hacerlo.
-        best_desk = min(compatible_desks, key=lambda d: desk_usage_counts[d])
+        # --- Lógica de Selección Mejorada ---
+        # En lugar de buscar entre TODOS los escritorios compatibles, ahora solo
+        # consideramos el "Top 3" recomendado. De entre esas excelentes opciones,
+        # elegimos la que tenga la menor carga actual.
+        best_desk = min(recommended_desks, key=lambda d: desk_usage_counts.get(d, 0))
         
-        # Asignamos el escritorio ancla encontrado a nuestro empleado.
         anchor_desk_assignments[employee_id] = best_desk
         
-        # Incrementamos el contador de uso para ese escritorio.
-        desk_usage_counts[best_desk] += 1
+        # Incrementamos el contador de uso para el escritorio elegido.
+        if best_desk is not None:
+            desk_usage_counts[best_desk] += 1
 
     return anchor_desk_assignments
 
@@ -66,31 +69,22 @@ if __name__ == '__main__':
     # Este bloque es solo para demostrar el funcionamiento.
     # En tu proyecto, llamarías a esta función desde tu script principal (main.py).
     
-    # Simulamos la carga de datos de una instancia.
-    # (Este es un extracto de instance1.json)
-    sample_raw_data = {
-        "Employees": ["E0", "E1", "E2", "E3", "E4"],
-        "Desks": ["D0", "D1", "D2", "D3", "D4"],
-        "Desks_E": {
-            "E0": ["D4", "D3", "D2"],      # 3 opciones
-            "E1": ["D2", "D4"],            # 2 opciones
-            "E2": ["D1", "D3", "D0"],      # 3 opciones
-            "E3": ["D4", "D1"],            # 2 opciones
-            "E4": ["D4"]                   # 1 opción (el más restringido)
-        }
+    # 1. Se simulan los datos crudos
+    sample_raw_data = { "Employees": ["Ana", "Beto"], "Desks": ["D1", "D2"], "Desks_E": {"Ana": ["D1", "D2"], "Beto": ["D1"]} }
+    
+    # 2. Se simula la salida de la Etapa 0 (Análisis de Riesgo)
+    sample_risk_data = {
+        "Ana": {"risk_index": 0.9, "recommended_desks": ["D1", "D2"]}, # Alto riesgo
+        "Beto": {"risk_index": 0.2, "recommended_desks": ["D1", "D2"]}      # Bajo riesgo
     }
+
+    # El orden de procesamiento será: Ana (riesgo 0.9) y luego Beto (riesgo 0.2).
     
-    # Llamamos a la función para obtener el mapeo de anclas.
-    anchor_assignments = assign_anchor_desks(sample_raw_data)
+    # 3. Se llama a la función de Etapa 2 con ambas piezas de información
+    anchor_assignments = assign_anchor_desks(sample_raw_data, sample_risk_data)
     
-    print("Asignaciones de Escritorios Ancla:")
+    print("Asignaciones de Escritorios Ancla (Estratégicas):")
     print(anchor_assignments)
-    
-    # Resultado esperado (el orden de E1/E3 y E0/E2 puede variar si hay empates):
-    # El algoritmo procesará en el orden: E4, E1, E3, E0, E2
-    # E4 -> D4 (única opción)
-    # E1 -> D2 (opciones D2, D4; D2 tiene 0 usos, D4 tiene 1)
-    # E3 -> D1 (opciones D1, D4; D1 tiene 0 usos, D4 tiene 1)
-    # E0 -> D3 (opciones D4,D3,D2; D3 tiene 0 usos)
-    # E2 -> D0 (opciones D1,D3,D0; D0 tiene 0 usos)
-    # Salida: {'E4': 'D4', 'E1': 'D2', 'E3': 'D1', 'E0': 'D3', 'E2': 'D0'}
+    # Resultado esperado: {'Ana': 'D1', 'Beto': 'D1'} 
+    # Ana es procesada primero. Sus opciones recomendadas son D1 y D2. Ambas tienen 0 usos.
+    # Elige D1. Luego Beto es procesado y su única opción es D1.

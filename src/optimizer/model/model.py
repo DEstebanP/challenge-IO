@@ -81,7 +81,7 @@ def _process_schedule_results(model):
 
 # --- Función Principal del Módulo ---
 
-def solve_schedule_model(model_data):
+def solve_schedule_model(model_data, existing_cuts=[]):
     """
     Construye y resuelve el modelo de Pyomo para la Planificación Maestra de Horarios (Paso 1).
     """
@@ -115,6 +115,20 @@ def solve_schedule_model(model_data):
     
     # RESTRICCIÓN AÑADIDA
     model.capacity_constraint = pyo.Constraint(model.Days, rule=_capacity_constraint_rule)
+    
+    model.feasibility_cuts = pyo.ConstraintList()
+    
+    # --- Restricciones de Corte (Aprendizaje Iterativo) ---
+    # Se crea un contenedor para las restricciones de corte que vienen de Etapa 4
+    for cut_info in existing_cuts:
+        problematic_day = cut_info['day']
+        problematic_employees = cut_info['employees']
+        
+        # La expresión de la suma para el corte
+        expr = sum(model.Asiste_ek[e, problematic_day] for e in problematic_employees)
+        
+        # Se añade la restricción: sum(...) <= N - 1
+        model.feasibility_cuts.add(expr <= len(problematic_employees) - 1)
     
     print("Modelo de horarios construido. Resolviendo...")
     

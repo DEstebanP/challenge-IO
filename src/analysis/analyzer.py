@@ -12,7 +12,7 @@ def _analyze_desk_occupancy(df_assignments, all_desks):
         print("No hay escritorios definidos en la instancia.")
         return
 
-    assignments_by_day = df_assignments.groupby('Dia')
+    assignments_by_day = df_assignments.groupby('Dia', observed=True) 
     print(f"Total de escritorios disponibles: {total_desks}\n")
     
     # Usamos la lista predefinida para asegurar un orden cronológico en la salida.

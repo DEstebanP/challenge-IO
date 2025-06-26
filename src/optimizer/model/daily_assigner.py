@@ -117,16 +117,52 @@ def solve_daily_assignment_model(daily_data):
     # --- Resolver ---
     solver = pyo.SolverFactory('cbc')
     solver.options['seconds'] = 60 # Límite de 60 segundos por día
+    solver.options['ratioGap'] = 0.02
     results = solver.solve(model, tee=False)
 
-    # --- Procesar Resultados Diarios (simplificado) ---
-    if results.solver.termination_condition not in [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible]:
-        print(f"  -> El día {daily_data['day']} no tuvo solución factible.")
-        return None
+    term_cond = results.solver.termination_condition
+    status = results.solver.status
+    
+    solution_is_acceptable = (
+        term_cond in [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible] or
+        (term_cond == pyo.TerminationCondition.maxTimeLimit and len(results.solution.items()) > 0)
+    )
+
+    if not solution_is_acceptable:
+        print(f"  -> El día {daily_data['day']} no tuvo solución factible. Condición: {term_cond}")
+        # Devolvemos None para la solución y un gap 'infinito' para indicar fallo
+        return None, float('inf')
+
+    # 1. Extraer los límites del problema resuelto
+    # Usamos try-except por si el solver no reporta los límites
+    try:
+        # Para un problema de MINIMIZACIÓN:
+        # El límite inferior es la mejor cota teórica.
+        # El límite superior es la mejor solución entera encontrada.
+        lower_bound = results.problem[0].lower_bound
+        upper_bound = results.problem[0].upper_bound
+        
+        # 2. Calcular el gap
+        if abs(upper_bound) > 1e-9: # Evitar división por cero
+            gap = abs(upper_bound - lower_bound) / abs(upper_bound)
+        else:
+            gap = 0.0
+            
+    except (AttributeError, IndexError):
+        # Si no se pueden leer los límites, no podemos calcular el gap.
+        gap = None
+
+    if term_cond == pyo.TerminationCondition.optimal:
+        # Mensaje de éxito si la solución es perfecta.
+        print(f"  -> Éxito para el día {daily_data['day']}: Solución óptima encontrada (Gap: {gap*100}%).")
+    else:
+        # Mensaje de alerta para los demás casos (límite de tiempo, gap, etc.).
+        print(f"  -> Alerta para el día {daily_data['day']}: Se usará solución no óptima (Condición: {term_cond}, Gap: {gap*100}%).")
 
     final_assignments = []
     for (e, d) in model.ValidDailyAssignments:
         if pyo.value(model.X_ed[e, d], exception=False) >= 0.99:
             final_assignments.append({'Empleado': e, 'Escritorio': d, 'Dia': daily_data['day']})
 
-    return pd.DataFrame(final_assignments)
+    # 3. Devolver tanto el DataFrame de la solución como el gap calculado
+    return pd.DataFrame(final_assignments), gap
