@@ -4,14 +4,25 @@ import pyomo.environ as pyo
 
 def _objective_rule_step1(model):
     """
-    Función Objetivo: Maximizar la suma de las puntuaciones de preferencia de los empleados
-    basado en los días que asisten.
+    Función Objetivo Mejorada: Maximiza preferencias MENOS la penalización por riesgo.
     """
-    return sum(
+    # 1. El término original que recompensa las preferencias de días
+    preference_score = sum(
         model.S_ek[e, k] * model.Asiste_ek[e, k]
         for e in model.Employees
         for k in model.Days
     )
+
+    # 2. El NUEVO término que penaliza por programar empleados de alto riesgo
+    # Se suma el riesgo de cada empleado por cada día que asiste.
+    total_risk_penalty = model.w_riesgo * sum(
+        model.Risk_Index[e] * model.Asiste_ek[e, k]
+        for e in model.Employees
+        for k in model.Days
+    )
+    
+    # El objetivo final es el balance de ambos
+    return preference_score - total_risk_penalty
 
 def _attendance_window_rule_step1(model, e):
     """
@@ -87,6 +98,8 @@ def solve_schedule_model(model_data):
     # --- Parameters (Parámetros) ---
     model.S_ek = pyo.Param(model.Employees, model.Days, initialize=model_data['params']['S_ek'])
     model.M_eg = pyo.Param(model.Employees, model.Groups, initialize=model_data['params']['M_eg'])
+    model.Risk_Index = pyo.Param(model.Employees, initialize=model_data['params']['Risk_Index'])
+    model.w_riesgo = pyo.Param(initialize=model_data['params']['w_riesgo'])
 
     # --- Variables de Decisión ---
     model.Asiste_ek = pyo.Var(model.Employees, model.Days, domain=pyo.Binary)

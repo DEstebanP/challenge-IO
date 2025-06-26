@@ -4,6 +4,7 @@ import pandas as pd
 # Importar funciones de todos los módulos. He ajustado las rutas para que coincidan con tu estructura.
 # Asumo que la función de la Etapa 1 está en un archivo y la de la Etapa 3 en otro.
 from data.load_data import load_and_preprocess_data
+from optimizer.heuristics.risk_analysis import calculate_risk_and_top_desks # Análisis de Riesgo
 from optimizer.model.model import solve_schedule_model # Modelo de Horarios
 from optimizer.heuristics.anchor_assignment import assign_anchor_desks # Heurística de Anclas
 from optimizer.model.daily_assigner import solve_daily_assignment_model # Modelo de Asignación Diaria
@@ -22,6 +23,19 @@ def main():
     print("----------------------------------------------------")
     model_data, raw_data = load_and_preprocess_data(args.file)
     if not model_data: return
+    
+    # --- ETAPA 0: ANÁLISIS DE RIESGO ---
+    print("\n--- ETAPA 0: Calculando Índice de Riesgo de Aislamiento ---")
+    risk_data = calculate_risk_and_top_desks(raw_data)
+    print("   ...Índice de riesgo calculado para cada empleado.")
+    
+    print("\n3. Combinando datos para el modelo de horarios...")
+    # Añadimos los resultados del análisis y los pesos al diccionario de parámetros
+    # que usará el modelo de la Etapa 1.
+    model_data['params']['Risk_Index'] = {e: data['risk_index'] for e, data in risk_data.items()}
+    model_data['params']['w_riesgo'] = 2  # Peso para la penalización por riesgo
+    
+    print("   ...Datos listos para la Etapa 1.")
 
     # --- ETAPA 1: Planificación Maestra de Horarios ---
     print("\n--- ETAPA 1: Resolviendo Planificación de Horarios ---")
@@ -33,7 +47,8 @@ def main():
 
     # --- ETAPA 2: Asignación de Escritorios Ancla ---
     print("\n--- ETAPA 2: Asignando Escritorios Ancla ---")
-    anchor_map = assign_anchor_desks(raw_data)
+    anchor_map = assign_anchor_desks(raw_data, risk_data)
+    print(anchor_map)
     print("   ...Escritorios ancla asignados.")
 
     # --- ETAPA 3: Asignación Diaria Optimizada ---
@@ -88,7 +103,6 @@ def main():
         
     df_final_assignments = pd.concat(daily_results_dfs, ignore_index=True)
 
-    # --- FIN DE LA MODIFICACIÓN ---
     
     print("   ...Asignaciones diarias finalizadas.")
 
