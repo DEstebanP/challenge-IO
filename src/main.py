@@ -108,7 +108,7 @@ def main():
         print(f"\n--- ETAPA 4 (Intento #{i}): Analizando Calidad de la Solución Semanal ---")
         is_solution_acceptable, new_cuts = evaluate_and_generate_cut(
             daily_solutions, schedule_results['horario_semanal'], 
-            model_data, raw_data, anchor_map, quality_threshold=20
+            model_data, raw_data, anchor_map, quality_threshold=40
         )
         
         if is_solution_acceptable:

@@ -96,20 +96,20 @@ def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_d
     # Si la lista de 'esenciales' no está vacía, ESE es nuestro núcleo del conflicto.
     if innocent_employees:
         core_conflict =  [emp for emp in problematic_employees if emp not in innocent_employees]
-        print(f"      -> Diagnóstico: Se identificó un núcleo de conflicto de {len(core_conflict)} empleados esenciales.")
-    else:
-        # Si la lista está vacía, significa que quitar a ningún empleado por sí solo
-        # fue suficiente para arreglar el problema. El conflicto es más complejo.
-        # En este caso, nuestra mejor opción es usar el grupo problemático completo.
-        core_conflict = problematic_employees
-        print(f"      -> Diagnóstico: El conflicto es complejo y requiere a todo el grupo original.")
+        print(f"      -> Diagnóstico: Se identificó un núcleo de conflicto de {len(core_conflict)} empleados.")
+        if len(core_conflict) == 0:
+            # Si la lista está vacía, significa que quitar a ningún empleado por sí solo
+            # fue suficiente para arreglar el problema. El conflicto es más complejo.
+            # En este caso, nuestra mejor opción es usar el grupo problemático completo.
+            core_conflict = problematic_employees
+            print(f"      -> Diagnóstico: El conflicto es complejo y requiere a todo el grupo original.")
 
     # La función ahora devuelve el núcleo del conflicto correctamente identificado
     return core_conflict
 
 # --- Main Logic Function ---
 
-def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, raw_data, anchor_map, quality_threshold=10):
+def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, raw_data, anchor_map, quality_threshold=10, quality_threshold_day=8):
     """
     Función principal de la Etapa 4. Evalúa la calidad y genera un corte inteligente
     usando procesamiento en paralelo para el diagnóstico.
@@ -151,7 +151,7 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
         
         new_cuts = []
         for day, data in daily_costs.items():
-            if data['cost'] > quality_threshold:
+            if data['cost'] > quality_threshold_day:
                 print(f"   -> Detectado problema en el día {day} (Costo: {data['cost']}).")
                 problematic_employees = data['attendees']
                 
