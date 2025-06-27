@@ -45,7 +45,7 @@ def run_single_feasibility_test(args):
     solution_df = solve_daily_assignment_model(daily_data_test)
     
     # Devolvemos el empleado que quitamos y si la prueba tuvo éxito
-    return employee_to_remove, solution_df is not None
+    return employee_to_remove, solution_df[0] is not None
 
 def _calculate_daily_isolation_cost(solution_df, raw_data):
     """
@@ -72,6 +72,40 @@ def _calculate_daily_isolation_cost(solution_df, raw_data):
     
     # El costo es el número de casos de aislamiento encontrados
     return len(isolation_cases)
+
+def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data):
+    """
+    NUEVA FUNCIÓN de diagnóstico que usa paralelismo para encontrar el núcleo del conflicto.
+    """
+    print(f"   -> Iniciando diagnóstico paralelo para el día {day}...")
+    tasks = [
+        (emp, day, problematic_employees, anchor_map, model_data, raw_data)
+        for emp in problematic_employees
+    ]
+    
+    if not tasks:
+        return []
+
+    # Usamos un pool de procesos para ejecutar todas las pruebas a la vez
+    with Pool(processes=min(cpu_count(), len(tasks))) as pool:
+        results = pool.map(run_single_feasibility_test, tasks)
+
+    # Un empleado es "inocente" para el conflicto si al quitarlo, la prueba tuvo éxito.
+    innocent_employees = [emp for emp, success in results if success]
+    
+    # Si la lista de 'esenciales' no está vacía, ESE es nuestro núcleo del conflicto.
+    if innocent_employees:
+        core_conflict =  [emp for emp in problematic_employees if emp not in innocent_employees]
+        print(f"      -> Diagnóstico: Se identificó un núcleo de conflicto de {len(core_conflict)} empleados esenciales.")
+    else:
+        # Si la lista está vacía, significa que quitar a ningún empleado por sí solo
+        # fue suficiente para arreglar el problema. El conflicto es más complejo.
+        # En este caso, nuestra mejor opción es usar el grupo problemático completo.
+        core_conflict = problematic_employees
+        print(f"      -> Diagnóstico: El conflicto es complejo y requiere a todo el grupo original.")
+
+    # La función ahora devuelve el núcleo del conflicto correctamente identificado
+    return core_conflict
 
 # --- Main Logic Function ---
 
@@ -108,46 +142,24 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
     print(f"   -> Análisis de costos diarios (aislamientos): {daily_cost_report}")
     print(f"   -> Costo total de aislamiento: {total_isolation_cost if total_isolation_cost != float('inf') else 'INF'}")
     
-    # 2. Tomar la decisión (esta parte no cambia)
+    # 2. Tomar la decisión
     if total_isolation_cost <= quality_threshold:
         print("   -> Calidad de la solución ACEPTABLE. El ciclo termina.")
-        return True, None
+        return True, []
     else:
         print(f"   -> Calidad INSUFICIENTE (Costo total de aislamiento: {total_isolation_cost}). Se necesita una nueva iteración.")
         
-        # 3. Generar el corte inteligente (esta parte no cambia)
-        worst_day = max(daily_costs, key=lambda d: daily_costs[d]['cost'])
-        problematic_employees = daily_costs[worst_day]['attendees']
-        
-        core_conflict = _find_core_conflict(worst_day, problematic_employees, anchor_map, model_data, raw_data)
-        
-        new_cut = {'day': worst_day, 'employees': core_conflict}
-        print(f"   -> Nuevo filtro generado para el día {worst_day} con el núcleo de {len(core_conflict)} empleados.")
-        return False, new_cut
+        new_cuts = []
+        for day, data in daily_costs.items():
+            if data['cost'] > quality_threshold:
+                print(f"   -> Detectado problema en el día {day} (Costo: {data['cost']}).")
+                problematic_employees = data['attendees']
+                
+                # Ahora llamamos a nuestra nueva función de diagnóstico.
+                core_conflict = _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data)
+                
+                new_cut = {'day': day, 'employees': core_conflict}
+                new_cuts.append(new_cut)
+                print(f"   -> Filtro para el día {day} generado con el núcleo de {len(core_conflict)} empleados.")
 
-        # 4. Preparar y ejecutar los experimentos en paralelo
-        # Creamos una lista de tareas. Cada tarea es un tuple con todos los argumentos necesarios.
-        tasks = [
-            (emp, worst_day, problematic_employees, anchor_map, model_data, raw_data)
-            for emp in problematic_employees
-        ]
-
-        # Usamos un pool de procesos para ejecutar todas las pruebas a la vez
-        # Se usarán tantos núcleos como tenga tu CPU, hasta un máximo de len(tasks)
-        with Pool(processes=min(cpu_count(), len(tasks))) as pool:
-            results = pool.map(run_single_feasibility_test, tasks)
-
-        # 5. Analizar los resultados del diagnóstico
-        # El núcleo del conflicto son aquellos empleados que, al ser quitados,
-        # permitieron que se encontrara una solución.
-        essential_employees = [emp for emp, success in results if success]
-        
-        # Si todos los experimentos fallaron, el grupo entero es el núcleo minimal.
-        if not essential_employees:
-            core_conflict = problematic_employees
-        else:
-            core_conflict = essential_employees
-            
-        new_cut = {'day': worst_day, 'employees': core_conflict}
-        print(f"   -> Diagnóstico finalizado. Nuevo filtro para el día {worst_day} con el núcleo de {len(core_conflict)} empleados.")
-        return False, new_cut
+        return False, new_cuts

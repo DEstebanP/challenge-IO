@@ -117,14 +117,15 @@ def solve_daily_assignment_model(daily_data):
     # --- Resolver ---
     solver = pyo.SolverFactory('cbc')
     solver.options['seconds'] = 60 # Límite de 60 segundos por día
-    solver.options['ratioGap'] = 0.02
+    solver.options['ratioGap'] = 0.05
     results = solver.solve(model, tee=False)
 
     term_cond = results.solver.termination_condition
     status = results.solver.status
     
     solution_is_acceptable = (
-        term_cond in [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible] or
+        term_cond in [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible] 
+        or
         (term_cond == pyo.TerminationCondition.maxTimeLimit and len(results.solution.items()) > 0)
     )
 
@@ -154,10 +155,10 @@ def solve_daily_assignment_model(daily_data):
 
     if term_cond == pyo.TerminationCondition.optimal:
         # Mensaje de éxito si la solución es perfecta.
-        print(f"  -> Éxito para el día {daily_data['day']}: Solución óptima encontrada (Gap: {gap*100}%).")
+        print(f"  -> Éxito para el día {daily_data['day']}: Solución óptima encontrada (Gap: {gap * 100:.2f}%).")
     else:
         # Mensaje de alerta para los demás casos (límite de tiempo, gap, etc.).
-        print(f"  -> Alerta para el día {daily_data['day']}: Se usará solución no óptima (Condición: {term_cond}, Gap: {gap*100}%).")
+        print(f"  -> Alerta para el día {daily_data['day']}: Se usará solución no óptima (Condición: {term_cond}, Gap: {gap * 100:.2f}%).")
 
     final_assignments = []
     for (e, d) in model.ValidDailyAssignments:

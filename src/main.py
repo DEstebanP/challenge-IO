@@ -106,7 +106,7 @@ def main():
             
         # 3. ETAPA 4: Evaluar la calidad de la solución semanal completa
         print(f"\n--- ETAPA 4 (Intento #{i}): Analizando Calidad de la Solución Semanal ---")
-        is_solution_acceptable, new_cut = evaluate_and_generate_cut(
+        is_solution_acceptable, new_cuts = evaluate_and_generate_cut(
             daily_solutions, schedule_results['horario_semanal'], 
             model_data, raw_data, anchor_map, quality_threshold=20
         )
@@ -129,7 +129,8 @@ def main():
             }
             break # Rompemos el bucle
         else:
-            list_of_cuts.append(new_cut) # Añadimos el nuevo filtro para la siguiente iteración
+            list_of_cuts.extend(new_cuts) # Añadimos el nuevo filtro para la siguiente iteración
+            print(f"   -> Total de filtros activos: {len(list_of_cuts)}")
 
     # --- PRESENTACIÓN FINAL ---
     print("\n----------------------------------------------------")
