@@ -130,7 +130,6 @@ def solve_daily_assignment_model(daily_data):
     )
 
     if not solution_is_acceptable:
-        print(f"  -> El día {daily_data['day']} no tuvo solución factible. Condición: {term_cond}")
         # Devolvemos None para la solución y un gap 'infinito' para indicar fallo
         return None, float('inf')
 
@@ -152,13 +151,6 @@ def solve_daily_assignment_model(daily_data):
     except (AttributeError, IndexError):
         # Si no se pueden leer los límites, no podemos calcular el gap.
         gap = None
-
-    if term_cond == pyo.TerminationCondition.optimal:
-        # Mensaje de éxito si la solución es perfecta.
-        print(f"  -> Éxito para el día {daily_data['day']}: Solución óptima encontrada (Gap: {gap * 100:.2f}%).")
-    else:
-        # Mensaje de alerta para los demás casos (límite de tiempo, gap, etc.).
-        print(f"  -> Alerta para el día {daily_data['day']}: Se usará solución no óptima (Condición: {term_cond}, Gap: {gap * 100:.2f}%).")
 
     final_assignments = []
     for (e, d) in model.ValidDailyAssignments:

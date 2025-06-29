@@ -64,8 +64,6 @@ def _process_schedule_results(model):
     acceptable_termination = [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible]
     
     if model.results.solver.termination_condition not in acceptable_termination:
-        print("El solver no encontró una solución exitosa para el horario.")
-        print(f"Condición de Terminación: {model.results.solver.termination_condition}")
         return None
 
     meeting_days = {g: k for g in model.Groups for k in model.Days if pyo.value(model.Y_gk[g, k]) == 1}
@@ -85,8 +83,6 @@ def solve_schedule_model(model_data, existing_cuts=[]):
     """
     Construye y resuelve el modelo de Pyomo para la Planificación Maestra de Horarios (Paso 1).
     """
-    print("Construyendo el modelo de horarios (Paso 1)...")
-    
     model = pyo.ConcreteModel(name="Planificacion_Horarios_Step1")
 
     # --- Sets (Conjuntos) ---
@@ -130,11 +126,7 @@ def solve_schedule_model(model_data, existing_cuts=[]):
         # Se añade la restricción: sum(...) <= N - 1
         model.feasibility_cuts.add(expr <= len(problematic_employees) - 1)
     
-    print("Modelo de horarios construido. Resolviendo...")
-    
     solver = pyo.SolverFactory('cbc')
     model.results = solver.solve(model, tee=False)
-    
-    print("Resolución finalizada.")
     
     return _process_schedule_results(model)

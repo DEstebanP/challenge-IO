@@ -1,6 +1,9 @@
 import argparse
 import pandas as pd
 from multiprocessing import Pool, cpu_count
+import logging
+
+logging.getLogger('pyomo.core').setLevel(logging.ERROR)
 
 # Importar todas las funciones de nuestros módulos
 from data.load_data import load_and_preprocess_data
@@ -25,8 +28,7 @@ def daily_solver_worker(daily_data):
     """
     day = daily_data['day']
     num_employees = len(daily_data['sets']['Attending_Employees'])
-    print(f"   - [Proceso Paralelo] Iniciando para el día: {day} ({num_employees} empleados)...")
-    
+   
     # Llama al solver de la Etapa 3
     daily_assignments_df, final_gap = solve_daily_assignment_model(daily_data)
     
@@ -41,12 +43,12 @@ def main():
     parser.add_argument("--file", type=str, required=True, help='Instancia JSON a resolver.')
     args = parser.parse_args()
 
-    # --- Carga y Análisis Inicial (Pasos 0 y 2) ---
-    print(f"Iniciando proceso para la instancia: {args.file}")
+    # --- Carga y Análisis Inicial (Pasos 0 y 1) ---
     model_data, raw_data = load_and_preprocess_data(args.file)
     if not model_data: return
     
-    print("\n--- ETAPA 0: Calculando Índice de Riesgo ---")
+    #ETAPA 0: Calculando Índice de Riesgo
+    print("ETAPA 0: Calculando Índice de Riesgo")
     risk_data = calculate_risk_and_top_desks(raw_data)
     model_data['params']['Risk_Index'] = {e: data['risk_index'] for e, data in risk_data.items()}
     model_data['params']['w_riesgo'] = 2.0
@@ -55,10 +57,16 @@ def main():
     model_data['params']['w_aislamiento'] = 100
     model_data['params']['w_consistencia'] = 1
     
-    print("\n--- ETAPA 2: Asignando Escritorios Ancla ---")
+    #ETAPA 2: Asignando Escritorios Ancla
+    print("ETAPA 1: Asignando escritorios ancla...")
     anchor_map = assign_anchor_desks(raw_data, risk_data)
 
     # --- INICIO DEL BUCLE ITERATIVO DE MEJORA ---
+    
+    _print_section_header("M E T O D O L O G Í A")
+    print("ETAPA 0: Calculando heurísticas de Riesgo y Anclas...")
+    print("ETAPA 1-4: Iniciando bucle de optimización iterativa...")
+    
     max_iterations = 10
     list_of_cuts = []
     final_solution_dict = None
@@ -68,20 +76,17 @@ def main():
     best_isolation_cost = float('inf') # Inicializamos el mejor costo en infinito
 
     for i in range(1, max_iterations + 1):
-        print(f"\n================ ITERACIÓN DE MEJORA #{i} ==================")
-        
+        print(f"\n------Iniciando Iteración #{i}------")
         # 1. ETAPA 1: Planificar Horario con los filtros actuales
-        print(f"--- ETAPA 1 (Intento #{i}): Resolviendo Planificación de Horarios ---")
+        print(f"\nResolviendo el modelo de horarios (Iteración #{i})...")
         schedule_results = solve_schedule_model(model_data, list_of_cuts)
         if not schedule_results:
-            print("El modelo de Etapa 1 no pudo encontrar un horario. No se puede continuar.")
             break
         
         # 2. ETAPA 3: Resolver asignaciones diarias
-        print(f"\n--- ETAPA 3 (Intento #{i}): Resolviendo Asignaciones Diarias ---")
-        
-        # 1. Preparamos la lista de "tareas". Cada tarea es un diccionario
+        # 2.1. Preparamos la lista de "tareas". Cada tarea es un diccionario
         #    con todos los datos necesarios para resolver un día.
+        print("Resolviendo modelo de asignaciones diarias...")
         tasks = []
         for day, attending_employees in schedule_results['horario_semanal'].items():
             if not attending_employees: continue
@@ -99,26 +104,24 @@ def main():
                     'M_eg': { (e,g):v for (e,g),v in model_data['params']['M_eg'].items() if e in attending_employees },
                     'L_dz': model_data['params']['L_dz'],
                     'Anchor_Assignments': {e:d for e,d in anchor_map.items() if e in attending_employees},
-                    'w_aislamiento': 1000,
-                    'w_consistencia': 10
+                    'w_aislamiento': 100,
+                    'w_consistencia': 1
                 }
             }
             tasks.append(daily_data)
 
-        # 2. Creamos un pool de procesos y distribuimos las tareas
+        # 2.2. Creamos un pool de procesos y distribuimos las tareas
         # Se usarán hasta 5 procesos, o menos si tu CPU tiene menos núcleos.
         with Pool(processes=min(cpu_count(), 5)) as pool:
             # pool.map ejecuta la función 'daily_solver_worker' para cada elemento en 'tasks'
             # y devuelve una lista con los resultados en el mismo orden.
             results_list = pool.map(daily_solver_worker, tasks)
         
-        # 3. Reconstruimos el diccionario de soluciones diarias a partir de la lista de resultados
+        # 2.3. Reconstruimos el diccionario de soluciones diarias a partir de la lista de resultados
         daily_solutions = {day: {'solution': result_df, 'gap': gap} for day, result_df, gap in results_list}
             
-        # 4. ETAPA 4: Evaluar la calidad de la solución semanal completa
-        print(f"\n--- ETAPA 4 (Intento #{i}): Analizando Calidad de la Solución Semanal ---")
-
-        # 4.1. Sumar el número de asignaciones de cada día para obtener el total semanal.
+        # 3. ETAPA 4: Evaluar la calidad de la solución semanal completa
+        # 3.1. Sumar el número de asignaciones de cada día para obtener el total semanal.
         #    Se comprueba que la solución de cada día no sea None para evitar errores.
         total_weekly_assignments = sum(
             len(result_data['solution'])
@@ -126,25 +129,24 @@ def main():
             if result_data and result_data['solution'] is not None
         )
 
-        # 4.2. Calcular el 20% del total y redondear hacia abajo (usando int()).
+        # 3.2. Calcular el 20% del total y redondear hacia abajo (usando int()).
         dynamic_threshold = int(total_weekly_assignments * 0.18)
-        print(total_weekly_assignments, dynamic_threshold)
 
-        print(f"   -> Asignaciones totales en la semana: {total_weekly_assignments}")
-        print(f"   -> Umbral de calidad dinámico calculado: {dynamic_threshold} (18% del total)")
-
-        # 4.3. Usar el umbral dinámico en la llamada a la función.
+        # 3.3. Usar el umbral dinámico en la llamada a la función.
         is_solution_acceptable, new_cuts, current_isolation_cost = evaluate_and_generate_cut(
             daily_solutions, 
             schedule_results['horario_semanal'], 
             model_data, 
             raw_data, 
             anchor_map, 
-            quality_threshold=dynamic_threshold  # Se pasa la nueva variable
+            quality_threshold=16  # Se pasa la nueva variable
         )
         
+        # Imprime el resumen conciso de la iteración.
+        print(f"   -> Iteración #{i}: Costo Aislamiento={current_isolation_cost}. Umbral Calidad={dynamic_threshold}.")
+       
         # Comparamos si la solución de ESTA iteración es la mejor que hemos visto.
-        if current_isolation_cost < best_isolation_cost and best_isolation_cost != float('inf'):
+        if current_isolation_cost < best_isolation_cost:
             print(f"   -> ✨ ¡Nueva mejor solución encontrada! Costo: {current_isolation_cost} (anterior mejor: {best_isolation_cost})")
             best_isolation_cost = current_isolation_cost
             
@@ -161,7 +163,6 @@ def main():
             }
         
         if is_solution_acceptable:
-            print("\n¡SOLUCIÓN DE ALTA CALIDAD ENCONTRADA! Proceso finalizado.")
             # Extraemos el DataFrame de la clave 'solution' de cada resultado diario.
             # También comprobamos que el resultado del día no sea None.
             valid_dfs = [
@@ -179,7 +180,6 @@ def main():
             break # Rompemos el bucle
         else:
             list_of_cuts.extend(new_cuts) # Añadimos el nuevo filtro para la siguiente iteración
-            print(f"   -> Total de filtros activos: {len(list_of_cuts)}")
 
     # --- PRESENTACIÓN FINAL ---
     _print_section_header("R E S U M E N   D E L   P R O C E S O") # Un nuevo header

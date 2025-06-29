@@ -20,8 +20,6 @@ def run_single_feasibility_test(args):
     # Creamos el conjunto de prueba quitando al empleado de interés
     test_set = [e for e in problematic_employees if e != employee_to_remove]
     
-    print(f"      -> [Test Paralelo] Probando sin {employee_to_remove}...")
-    
     # Preparamos un diccionario con los datos específicos y FILTRADOS para esta prueba
     daily_data_test = {
         'day': day,
@@ -87,7 +85,6 @@ def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_d
     """
     NUEVA FUNCIÓN de diagnóstico que usa paralelismo para encontrar el núcleo del conflicto.
     """
-    print(f"   -> Iniciando diagnóstico paralelo para el día {day}...")
     tasks = [
         (emp, day, problematic_employees, anchor_map, model_data, raw_data, original_daily_cost)
         for emp in problematic_employees
@@ -106,13 +103,11 @@ def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_d
     # Si la lista de 'esenciales' no está vacía, ESE es nuestro núcleo del conflicto.
     if innocent_employees:
         core_conflict =  [emp for emp in problematic_employees if emp not in innocent_employees]
-        print(f"      -> Diagnóstico: Se identificó un núcleo de conflicto de {len(core_conflict)} empleados.")
         if len(core_conflict) == 0:
             # Si la lista está vacía, significa que quitar a ningún empleado por sí solo
             # fue suficiente para arreglar el problema. El conflicto es más complejo.
             # En este caso, nuestra mejor opción es usar el grupo problemático completo.
             core_conflict = problematic_employees
-            print(f"      -> Diagnóstico: El conflicto es complejo y requiere a todo el grupo original.")
 
     # La función ahora devuelve el núcleo del conflicto correctamente identificado
     return core_conflict
@@ -149,20 +144,15 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
         f"{day}({data['cost'] if data['cost'] != float('inf') else 'INF'})" 
         for day, data in sorted(daily_costs.items())
     )
-    print(f"   -> Análisis de costos diarios (aislamientos): {daily_cost_report}")
-    print(f"   -> Costo total de aislamiento: {total_isolation_cost if total_isolation_cost != float('inf') else 'INF'}")
     
     # 2. Tomar la decisión
     if total_isolation_cost <= quality_threshold:
-        print("   -> Calidad de la solución ACEPTABLE. El ciclo termina.")
         return True, [], total_isolation_cost
     else:
-        print(f"   -> Calidad INSUFICIENTE (Costo total de aislamiento: {total_isolation_cost}). Se necesita una nueva iteración.")
-        
+        print("\n[!] No se encontró una solución aceptable que cumpla con el umbral minimo de calidad. Generando corte inteligente...")
         new_cuts = []
         for day, data in daily_costs.items():
             if data['cost'] > quality_threshold_day:
-                print(f"   -> Detectado problema en el día {day} (Costo: {data['cost']}).")
                 problematic_employees = data['attendees']
                 
                 # Pasamos el costo de ESTE DÍA a la función de diagnóstico.
@@ -173,6 +163,5 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
                 
                 new_cut = {'day': day, 'employees': core_conflict}
                 new_cuts.append(new_cut)
-                print(f"   -> Filtro para el día {day} generado con el núcleo de {len(core_conflict)} empleados.")
 
         return False, new_cuts, total_isolation_cost
