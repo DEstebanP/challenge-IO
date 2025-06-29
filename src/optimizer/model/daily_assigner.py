@@ -116,7 +116,7 @@ def solve_daily_assignment_model(daily_data):
 
     # --- Resolver ---
     solver = pyo.SolverFactory('cbc')
-    solver.options['seconds'] = 60 # Límite de 60 segundos por día
+    solver.options['seconds'] = 20 # Límite de 120 segundos por día
     solver.options['ratioGap'] = 0.05
     results = solver.solve(model, tee=False)
 

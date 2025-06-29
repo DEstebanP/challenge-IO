@@ -55,6 +55,10 @@ def main():
     max_iterations = 10
     list_of_cuts = []
     final_solution_dict = None
+    
+    # Variables para guardar la mejor solución
+    best_solution_so_far = None
+    best_isolation_cost = float('inf') # Inicializamos el mejor costo en infinito
 
     for i in range(1, max_iterations + 1):
         print(f"\n================ ITERACIÓN DE MEJORA #{i} ==================")
@@ -104,12 +108,50 @@ def main():
         # 3. Reconstruimos el diccionario de soluciones diarias a partir de la lista de resultados
         daily_solutions = {day: {'solution': result_df, 'gap': gap} for day, result_df, gap in results_list}
             
-        # 3. ETAPA 4: Evaluar la calidad de la solución semanal completa
+        # 4. ETAPA 4: Evaluar la calidad de la solución semanal completa
         print(f"\n--- ETAPA 4 (Intento #{i}): Analizando Calidad de la Solución Semanal ---")
-        is_solution_acceptable, new_cuts = evaluate_and_generate_cut(
-            daily_solutions, schedule_results['horario_semanal'], 
-            model_data, raw_data, anchor_map, quality_threshold=40
+
+        # 4.1. Sumar el número de asignaciones de cada día para obtener el total semanal.
+        #    Se comprueba que la solución de cada día no sea None para evitar errores.
+        total_weekly_assignments = sum(
+            len(result_data['solution'])
+            for result_data in daily_solutions.values()
+            if result_data and result_data['solution'] is not None
         )
+
+        # 4.2. Calcular el 20% del total y redondear hacia abajo (usando int()).
+        dynamic_threshold = int(total_weekly_assignments * 0.18)
+        print(total_weekly_assignments, dynamic_threshold)
+
+        print(f"   -> Asignaciones totales en la semana: {total_weekly_assignments}")
+        print(f"   -> Umbral de calidad dinámico calculado: {dynamic_threshold} (18% del total)")
+
+        # 4.3. Usar el umbral dinámico en la llamada a la función.
+        is_solution_acceptable, new_cuts, current_isolation_cost = evaluate_and_generate_cut(
+            daily_solutions, 
+            schedule_results['horario_semanal'], 
+            model_data, 
+            raw_data, 
+            anchor_map, 
+            quality_threshold=16  # Se pasa la nueva variable
+        )
+        
+        # Comparamos si la solución de ESTA iteración es la mejor que hemos visto.
+        if current_isolation_cost < best_isolation_cost and best_isolation_cost != float('inf'):
+            print(f"   -> ✨ ¡Nueva mejor solución encontrada! Costo: {current_isolation_cost} (anterior mejor: {best_isolation_cost})")
+            best_isolation_cost = current_isolation_cost
+            
+            # Guardamos esta solución como la mejor hasta ahora
+            valid_dfs = [
+                result_data['solution'] 
+                for result_data in daily_solutions.values() 
+                if result_data and result_data['solution'] is not None
+            ]
+            full_assignment_df = pd.concat(valid_dfs, ignore_index=True) if valid_dfs else pd.DataFrame()
+            best_solution_so_far = {
+                'asignaciones': full_assignment_df,
+                'reuniones': pd.DataFrame(list(schedule_results['dias_reunion'].items()), columns=['Grupo', 'Dia_Reunion'])
+            }
         
         if is_solution_acceptable:
             print("\n¡SOLUCIÓN DE ALTA CALIDAD ENCONTRADA! Proceso finalizado.")
@@ -134,11 +176,17 @@ def main():
 
     # --- PRESENTACIÓN FINAL ---
     print("\n----------------------------------------------------")
+    # Si el bucle terminó porque encontró una solución aceptable, la usamos.
     if final_solution_dict:
-        print("ANÁLISIS DE LA MEJOR SOLUCIÓN ENCONTRADA:")
+        print("ANÁLISIS DE LA SOLUCIÓN DE ALTA CALIDAD ENCONTRADA:")
         analyze_solution(final_solution_dict, model_data, raw_data)
+    # Si el bucle terminó por las 10 iteraciones, usamos la MEJOR que guardamos.
+    elif best_solution_so_far:
+        print(f"ANÁLISIS DE LA MEJOR SOLUCIÓN ENCONTRADA DURANTE LAS ITERACIONES (Costo de aislamiento: {best_isolation_cost}):")
+        analyze_solution(best_solution_so_far, model_data, raw_data)
+    # Si nunca se encontró una solución factible.
     else:
-        print("No se pudo encontrar una solución de calidad aceptable dentro del límite de iteraciones.")
+        print("No se pudo encontrar una solución factible en ninguna de las iteraciones.")
 
 if __name__ == "__main__":
     main()

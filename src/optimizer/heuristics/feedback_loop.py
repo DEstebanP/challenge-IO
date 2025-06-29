@@ -15,7 +15,7 @@ def run_single_feasibility_test(args):
     Debe estar fuera de cualquier clase para que multiprocessing pueda usarla.
     """
     # Desempaquetamos los argumentos
-    employee_to_remove, day, problematic_employees, anchor_map, model_data, raw_data = args
+    employee_to_remove, day, problematic_employees, anchor_map, model_data, raw_data, original_daily_cost = args
     
     # Creamos el conjunto de prueba quitando al empleado de interés
     test_set = [e for e in problematic_employees if e != employee_to_remove]
@@ -44,8 +44,18 @@ def run_single_feasibility_test(args):
     
     solution_df = solve_daily_assignment_model(daily_data_test)
     
+    if solution_df[0] is None:
+        # Si no hay solución, la prueba falla.
+        is_successful = False
+    else:
+        # Si hay solución, calculamos su costo y comparamos.
+        new_isolation_cost = _calculate_daily_isolation_cost(solution_df[0], raw_data)
+        
+        # La prueba es exitosa SOLO SI el costo no aumentó.
+        is_successful = new_isolation_cost < original_daily_cost
+    
     # Devolvemos el empleado que quitamos y si la prueba tuvo éxito
-    return employee_to_remove, solution_df[0] is not None
+    return employee_to_remove, is_successful
 
 def _calculate_daily_isolation_cost(solution_df, raw_data):
     """
@@ -73,13 +83,13 @@ def _calculate_daily_isolation_cost(solution_df, raw_data):
     # El costo es el número de casos de aislamiento encontrados
     return len(isolation_cases)
 
-def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data):
+def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data, original_daily_cost):
     """
     NUEVA FUNCIÓN de diagnóstico que usa paralelismo para encontrar el núcleo del conflicto.
     """
     print(f"   -> Iniciando diagnóstico paralelo para el día {day}...")
     tasks = [
-        (emp, day, problematic_employees, anchor_map, model_data, raw_data)
+        (emp, day, problematic_employees, anchor_map, model_data, raw_data, original_daily_cost)
         for emp in problematic_employees
     ]
     
@@ -109,7 +119,7 @@ def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_d
 
 # --- Main Logic Function ---
 
-def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, raw_data, anchor_map, quality_threshold=10, quality_threshold_day=8):
+def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, raw_data, anchor_map, quality_threshold=10, quality_threshold_day=4):
     """
     Función principal de la Etapa 4. Evalúa la calidad y genera un corte inteligente
     usando procesamiento en paralelo para el diagnóstico.
@@ -145,7 +155,7 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
     # 2. Tomar la decisión
     if total_isolation_cost <= quality_threshold:
         print("   -> Calidad de la solución ACEPTABLE. El ciclo termina.")
-        return True, []
+        return True, [], total_isolation_cost
     else:
         print(f"   -> Calidad INSUFICIENTE (Costo total de aislamiento: {total_isolation_cost}). Se necesita una nueva iteración.")
         
@@ -155,11 +165,14 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
                 print(f"   -> Detectado problema en el día {day} (Costo: {data['cost']}).")
                 problematic_employees = data['attendees']
                 
+                # Pasamos el costo de ESTE DÍA a la función de diagnóstico.
+                original_daily_cost = data['cost']
+                
                 # Ahora llamamos a nuestra nueva función de diagnóstico.
-                core_conflict = _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data)
+                core_conflict = _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data, original_daily_cost)
                 
                 new_cut = {'day': day, 'employees': core_conflict}
                 new_cuts.append(new_cut)
                 print(f"   -> Filtro para el día {day} generado con el núcleo de {len(core_conflict)} empleados.")
 
-        return False, new_cuts
+        return False, new_cuts, total_isolation_cost

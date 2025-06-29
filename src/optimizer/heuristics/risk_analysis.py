@@ -42,8 +42,6 @@ def calculate_risk_and_top_desks(raw_data):
             employee_risk_data[employee] = {'risk_index': 1.0, 'recommended_desks': []}
             continue
 
-        # --- INICIO DE LA MODIFICACIÓN ---
-
         # 4. Ordenar la lista de escritorios por su riesgo (de menor a mayor)
         desk_risk_details.sort(key=lambda item: item[0])
         
@@ -59,6 +57,5 @@ def calculate_risk_and_top_desks(raw_data):
             'recommended_desks': top_3_desks
         }
         
-        # --- FIN DE LA MODIFICACIÓN ---
         
     return employee_risk_data
