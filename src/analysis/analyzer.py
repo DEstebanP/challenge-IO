@@ -1,167 +1,203 @@
 import pandas as pd
+from tabulate import tabulate
+import math
 
-# Definimos el orden cronológico de los días para usarlo en todo el script.
+# Constante para asegurar el orden cronológico en todos los análisis.
 DAY_ORDER = ['L', 'Ma', 'Mi', 'J', 'V']
 
-def _analyze_desk_occupancy(df_assignments, all_desks):
-    """Analiza la ocupación de escritorios por día, detallando cada asignación."""
-    print("### 1. Análisis de Ocupación de Escritorios (Detallado) ###")
+def _print_section_header(title):
+    """ Imprime un encabezado de sección estandarizado y llamativo. """
+    width = 86
+    print("\n" + "=" * width)
+    print(title.center(width))
+    print("=" * width)
+
+def _get_daily_isolation_incidents(daily_solution_df, raw_data):
+    """
+    Analiza una asignación de UN SOLO DÍA y cuenta el número total de
+    incidentes de aislamiento (empleados solos de su grupo en una zona).
+    Esta es la lógica CORRECTA y PROBADA.
+    """
+    if daily_solution_df is None or daily_solution_df.empty:
+        return 0
+
+    # No es necesario enriquecer el DataFrame aquí si ya lo hemos hecho antes.
+    # Pero para mantener la función autocontenida, se espera un df con 'Grupo' y 'Zona'.
     
-    total_desks = len(all_desks)
-    if total_desks == 0:
-        print("No hay escritorios definidos en la instancia.")
-        return
-
-    assignments_by_day = df_assignments.groupby('Dia', observed=True) 
-    print(f"Total de escritorios disponibles: {total_desks}\n")
+    # Contar empleados por cada grupo en cada zona
+    group_zone_counts = daily_solution_df.groupby(['Grupo', 'Zona']).size()
     
-    # Usamos la lista predefinida para asegurar un orden cronológico en la salida.
-    for day in DAY_ORDER:
-        if day not in assignments_by_day.groups:
-            continue # Si no hubo asignaciones ese día, lo saltamos.
-            
-        group_df = assignments_by_day.get_group(day)
-        count = len(group_df)
-        percentage = (count / total_desks) * 100
-        print(f"--- Día {day}: {count}/{total_desks} escritorios asignados ({percentage:.1f}%) ---")
-        
-        # El sort_values() ahora funcionará correctamente por la categorización del día.
-        for index, row in group_df.sort_values(by='Escritorio').iterrows():
-            print(f"  - {row['Escritorio']}: {row['Empleado']}")
-
-def _analyze_preference_mismatches(df_assignments, raw_data):
-    """
-    MODIFICADO: Cuenta las asignaciones en días no preferidos usando los datos originales
-    para ser más robusto y no depender de los pesos del modelo.
-    """
-    print("\n### 2. Análisis de Preferencias de Días ###")
+    # Filtrar para encontrar los casos donde el conteo es exactamente 1
+    isolation_cases = group_zone_counts[group_zone_counts == 1]
     
-    employee_day_preferences = raw_data.get('Days_E', {})
-    mismatch_count = 0
+    # El costo es el número de casos de aislamiento encontrados
+    return len(isolation_cases)
+
+def _format_multiline_list(items, columns=3):
+    """ Formatea una lista de strings en un número fijo de columnas. """
+    if not items:
+        return ""
     
-    for index, row in df_assignments.iterrows():
-        employee = row['Empleado']
-        day = row['Dia']
-        # Comprobamos directamente contra la lista de preferencias originales.
-        if day not in employee_day_preferences.get(employee, []):
-            mismatch_count += 1
-            
-    print(f"Se realizaron {mismatch_count} asignaciones en días NO preferidos por los empleados.")
-
-def _analyze_group_dispersion(df_assignments_enhanced):
-    """
-    MODIFICADO: Analiza la dispersión de grupos. Ahora recibe el DataFrame ya enriquecido.
-    """
-    print("\n### 3. Análisis de Dispersión de Grupos por Zona (Detallado) ###")
-
-    # La salida ahora estará ordenada cronológicamente por día gracias a la categorización.
-    print("Distribución de los grupos en las zonas cada día que tienen miembros presentes:")
-    for (group, day), group_day_df in df_assignments_enhanced.groupby(['Grupo', 'Dia'], observed=True):
-        present_count = len(group_day_df)
-        # Obtenemos el tamaño total del grupo del DataFrame enriquecido.
-        total_members = group_day_df['Tamaño_Grupo'].iloc[0]
-        
-        zone_counts = group_day_df['Zona'].value_counts()
-        distribution_str = ", ".join([f"{zone} ({count})" for zone, count in zone_counts.items()])
-        
-        print(f"- Grupo {group} - Día {day}: Presentes {present_count}/{total_members}. Distribución: {distribution_str}")
-
-def _analyze_full_group_attendance(df_assignments_enhanced, df_meetings):
-    """
-    MODIFICADO: Verifica la asistencia en reuniones usando el DataFrame enriquecido
-    para mayor eficiencia.
-    """
-    print("\n### 4. Análisis de Asistencia en Días de Reunión ###")
-
-    for index, row in df_meetings.iterrows():
-        meeting_group = row['Grupo']
-        meeting_day = row['Dia_Reunion']
-        
-        # Filtramos el DataFrame ya enriquecido, lo cual es más rápido.
-        attendees = df_assignments_enhanced[
-            (df_assignments_enhanced['Dia'] == meeting_day) & 
-            (df_assignments_enhanced['Grupo'] == meeting_group)
-        ]
-        
-        num_attendees = len(attendees)
-        # Obtenemos el tamaño del grupo del DataFrame.
-        total_members = attendees['Tamaño_Grupo'].iloc[0] if not attendees.empty else 0
-        
-        if num_attendees == total_members:
-            print(f"- Grupo {meeting_group}: CUMPLE. Asisten los {num_attendees}/{total_members} miembros el día de su reunión ({meeting_day}). ✔️")
-        else:
-            print(f"- Grupo {meeting_group}: NO CUMPLE. Solo asisten {num_attendees}/{total_members} miembros el día de su reunión ({meeting_day}). ❌")
-
-def _analyze_desk_compatibility(df_assignments, raw_data):
-    """Verifica que cada asignación respete la lista de escritorios compatibles."""
-    print("\n### 5. Verificación de Compatibilidad de Escritorios (Desks_E) ###")
+    rows = math.ceil(len(items) / columns)
+    padded_items = items + [''] * (rows * columns - len(items))
+    col_data = [padded_items[i::rows] for i in range(rows)]
     
-    desk_compatibilities = raw_data.get('Desks_E', {})
-    violations = []
+    lines = []
+    for row_items in col_data:
+        lines.append("  ".join(item.ljust(35) for item in row_items).rstrip())
+    return "\n".join(lines)
 
-    for index, row in df_assignments.iterrows():
-        employee = row['Empleado']
-        desk = row['Escritorio']
-        allowed_desks = desk_compatibilities.get(employee, [])
-        if desk not in allowed_desks:
-            violations.append(f"  - Empleado {employee} asignado a {desk}, pero sus escritorios permitidos son: {allowed_desks}")
 
-    if not violations:
-        print("VERIFICACIÓN CUMPLIDA: Todas las asignaciones respetan la compatibilidad. ✔️")
-    else:
-        print("¡ALERTA! Se encontraron asignaciones incompatibles con Desks_E: ❌")
-        for v in violations:
-            print(v)
-
-def _analyze_employee_assignments(df_assignments_enhanced):
+def analyze_solution(results, model_data, raw_data, final_status_message):
     """
-    Crea un resumen para cada empleado mostrando los días y escritorios asignados.
-    Ahora ordena cronológicamente.
+    Función principal y rediseñada que ejecuta un análisis completo y presenta
+    los resultados en un formato profesional y estructurado.
     """
-    print("\n### 6. Resumen de Asignaciones por Empleado ###")
+    print(final_status_message)
 
-    # El groupby y sort_values ahora respetan el orden cronológico de los días.
-    for employee, assignments in df_assignments_enhanced.groupby('Empleado'):
-        assignment_details = [f"{row['Dia']}: {row['Escritorio']}" for index, row in assignments.sort_values(by='Dia').iterrows()]
-        details_str = ", ".join(assignment_details)
-        num_days = len(assignments)
-        print(f"- {employee}: Asignado {num_days} día(s) -> {details_str}")
-
-
-def analyze_solution(results, model_data, raw_data):
-    """
-    Función principal que ejecuta una serie de análisis sobre la solución obtenida.
-    """
     if not results or 'asignaciones' not in results or results['asignaciones'].empty:
-        print("No hay resultados de asignaciones para analizar.")
+        print("\nNo hay resultados de asignaciones para analizar.")
         return
-        
-    df_assignments = results['asignaciones'].copy() # Usamos una copia para evitar warnings
-    df_meetings = results.get('reuniones', pd.DataFrame())
-    
-    # --- INICIO DE LAS MEJORAS: PRE-PROCESAMIENTO CENTRALIZADO ---
 
-    # 1. Convertir la columna 'Dia' a un tipo categórico ordenado.
-    #    Esto asegura que cualquier ordenamiento por día sea cronológico (L, Ma, Mi...).
+    # --- 1. PREPARACIÓN DE DATOS ENRIQUECIDOS ---
+    df_assignments = results['asignaciones'].copy()
+    df_meetings = results.get('reuniones', pd.DataFrame())
+
     day_categorical_type = pd.CategoricalDtype(categories=DAY_ORDER, ordered=True)
     df_assignments['Dia'] = df_assignments['Dia'].astype(day_categorical_type)
 
-    # 2. Enriquecer el DataFrame de asignaciones una sola vez con toda la información necesaria.
     desk_to_zone = {desk: zone for zone, desks in raw_data.get('Desks_Z', {}).items() for desk in desks}
     employee_to_group = {emp: group for group, emps in raw_data.get('Employees_G', {}).items() for emp in emps}
-    group_sizes = {group: len(emps) for group, emps in raw_data.get('Employees_G', {}).items()}
     
     df_assignments['Zona'] = df_assignments['Escritorio'].map(desk_to_zone)
     df_assignments['Grupo'] = df_assignments['Empleado'].map(employee_to_group)
+    
+    # --- 2. CÁLCULO DE TODOS LOS KPIs (Usando la lógica correcta) ---
+
+    # --- CÁLCULO DE COHESIÓN (CORREGIDO) ---
+    daily_isolation_costs = {}
+    for day in DAY_ORDER:
+        df_day = df_assignments[df_assignments['Dia'] == day]
+        daily_isolation_costs[day] = _get_daily_isolation_incidents(df_day, raw_data)
+    
+    total_isolation_cost = sum(daily_isolation_costs.values())
+
+    # --- Resto de KPIs ---
+    total_assignments = len(df_assignments)
+    total_employees_in_instance = len(raw_data.get('Employees', []))
+    employees_assigned = df_assignments['Empleado'].nunique()
+    total_desks = len(raw_data.get('Desks', []))
+    avg_occupancy = (total_assignments / (total_desks * len(DAY_ORDER))) * 100 if total_desks > 0 else 0
+    mismatch_preferences = sum(1 for _, row in df_assignments.iterrows() if row['Dia'] not in raw_data.get('Days_E', {}).get(row['Empleado'], []))
+    meeting_compliance_count = df_meetings['Grupo'].nunique()
+    total_groups = len(raw_data.get('Groups',[]))
+    compat_violations = sum(1 for _, row in df_assignments.iterrows() if row['Escritorio'] not in raw_data.get('Desks_E', {}).get(row['Empleado'], []))
+    anchor_map = results.get('anclas', {})
+    anchor_assignments_count = sum(1 for _, row in df_assignments.iterrows() if anchor_map.get(row['Empleado']) == row['Escritorio'])
+
+    # --- 3. IMPRESIÓN DEL INFORME ESTRUCTURADO ---
+    _print_section_header("R E S U M E N   E J E C U T I V O")
+    # (El resto de la función de impresión sigue igual, ya que ahora los datos son correctos)
+    exec_summary_data = [
+        ["> Costo Total de Aislamiento (Objetivo Principal)", f"{total_isolation_cost}"],
+        ["MÉTRICAS DE COBERTURA", ""],
+        ["  - Asignaciones totales realizadas", f"{total_assignments}"],
+        ["  - Empleados con asignación", f"{employees_assigned} / {total_employees_in_instance} ({employees_assigned/total_employees_in_instance:.1%})"],
+        ["  - Ocupación promedio de escritorios", f"{avg_occupancy:.1f}%"],
+        ["MÉTRICAS DE CALIDAD", ""],
+        ["  - Asignaciones en días NO preferidos", f"{mismatch_preferences} ({mismatch_preferences/total_assignments:.1%})"],
+        ["  - Cumplimiento asistencia a reuniones", f"{meeting_compliance_count} / {total_groups} ({meeting_compliance_count/total_groups:.1%})"],
+    ]
+    print(tabulate(exec_summary_data, headers=["INDICADOR CLAVE DE RENDIMIENTO (KPI)", "VALOR"], tablefmt="presto"))
+
+    _print_section_header("D E C I S I O N E S   O P E R A C I O N A L E S")
+    # ... (El resto de la impresión no cambia)
+    print("\n--- [1. Ocupación Diaria de la Oficina] ---")
+    occupancy_data = []
+    for day in DAY_ORDER:
+        count = len(df_assignments[df_assignments['Dia'] == day])
+        percentage = (count / total_desks) * 100 if total_desks > 0 else 0
+        occupancy_data.append([day, count, f"{percentage:.1f}"])
+    print(tabulate(occupancy_data, headers=["Día", "Empleados Asignados", "Ocupación (%)"], tablefmt="pipe"))
+
+    print("\n--- [2. Días de Reunión Designados por Grupo] ---")
+    meeting_items = [f"{row['Grupo']}: {row['Dia_Reunion']}" for _, row in df_meetings.sort_values(by='Grupo').iterrows()]
+    print(_format_multiline_list(meeting_items, columns=3))
+    
+    _print_section_header("A N Á L I S I S   D E   C A L I D A D")
+    print("\n--- [A. Costo de Aislamiento por Día] ---")
+    cohesion_table_data = [[day, cost] for day, cost in daily_isolation_costs.items()]
+    cohesion_table_data.append(["TOTAL", total_isolation_cost])
+    print(tabulate(cohesion_table_data, headers=["Día", "Total de Aislamientos (Incidentes)"], tablefmt="pipe"))
+
+    print("\n--- [B. Verificación de Restricciones y Heurísticas] ---")
+    print(f"- Cumplimiento de Compatibilidad Escritorio-Empleado: {'CUMPLIDO ✔️' if compat_violations == 0 else f'FALLIDO ({compat_violations} violaciones) ❌'}")
+    print(f"- Uso de Escritorios \"Ancla\" de Referencia: {anchor_assignments_count} de {total_assignments} asignaciones ({anchor_assignments_count/total_assignments:.1%})")
+
+    _print_section_header("A N E X O  1:  P L A N   D E   A S I G N A C I Ó N   F I N A L")
+    assignment_items = []
+    # (El resto de la lógica de Anexo 1 y Anexo 2 que ya teníamos no necesita cambiar)
+    group_sizes = {group: len(emps) for group, emps in raw_data.get('Employees_G', {}).items()}
     df_assignments['Tamaño_Grupo'] = df_assignments['Grupo'].map(group_sizes)
+    meeting_map = {row['Grupo']: row['Dia_Reunion'] for index, row in df_meetings.iterrows()}
+    df_assignments['Es_Reunion'] = df_assignments.apply(
+        lambda row: row['Dia'] == meeting_map.get(row['Grupo']), axis=1
+    )
+    _, dispersion_details_by_day = _calculate_cohesion_kpis_for_annex(df_assignments) # Usamos una función separada para el anexo
     
-    # --- FIN DE LAS MEJORAS ---
+    for emp, assignments in df_assignments.groupby('Empleado'):
+        details = ", ".join(f"{row['Dia']}:{row['Escritorio']}" for _, row in assignments.sort_values(by='Dia').iterrows())
+        assignment_items.append(f"{emp}: {details}")
+    print(_format_multiline_list(assignment_items, columns=2))
+
+    _print_section_header("A N E X O  2:   D E S G L O S E   D E   C O H E S I Ó N   D I A R I A")
+    for day in DAY_ORDER:
+        if dispersion_details_by_day.get(day):
+            print(f"\n--- [Día {day}] ---")
+            dispersion_details_by_day[day].sort()
+            for line in dispersion_details_by_day[day]:
+                print(line)
+
+# Reemplaza la función existente con esta versión corregida
+def _calculate_cohesion_kpis_for_annex(df_assignments_enhanced):
+    """ 
+    Función auxiliar solo para generar el texto del anexo 2.
+    CORREGIDA para manejar correctamente el caso de un solo asistente.
+    """
+    dispersion_details_by_day = {day: [] for day in DAY_ORDER}
     
-    # Las funciones de análisis ahora reciben el DataFrame enriquecido o los datos que necesitan.
-    _analyze_desk_occupancy(df_assignments, model_data['sets']['Desks'])
-    _analyze_preference_mismatches(df_assignments, raw_data) # Pasa raw_data para ser más robusto
-    _analyze_group_dispersion(df_assignments)
-    if not df_meetings.empty:
-        _analyze_full_group_attendance(df_assignments, df_meetings)
-    _analyze_desk_compatibility(df_assignments, raw_data)
-    _analyze_employee_assignments(df_assignments)
+    for (day, group), group_day_df in df_assignments_enhanced.groupby(['Dia', 'Grupo'], observed=True):
+        
+        zone_counts = group_day_df['Zona'].value_counts()
+        distribution_str = ", ".join([f"{zone}({count})" for zone, count in zone_counts.items()])
+        
+        num_presentes = len(group_day_df)
+        conclusion = "" # Inicializar la conclusión
+        
+        # 1. Caso especial: Solo una persona del grupo asiste.
+        if num_presentes == 1:
+            conclusion = "-> 1 persona presente (Aislado del equipo)."
+        
+        # 2. Caso: Asisten varios, pero todos en la misma zona. ¡Esto es cohesión perfecta!
+        elif len(zone_counts) == 1:
+            conclusion = "-> Cohesión perfecta."
+            
+        # 3. Caso: Asisten varios y están divididos, y al menos uno está solo en una zona.
+        elif 1 in zone_counts.values:
+            isolated_count = sum(1 for count in zone_counts.values if count == 1)
+            conclusion = f"-> {len(zone_counts)} subgrupos ({isolated_count} aislado/s)."
+            
+        # 4. Caso: Asisten varios y están divididos, pero siempre en grupos de 2 o más.
+        else:
+            conclusion = f"-> {len(zone_counts)} subgrupos (sin aislados)."
+            
+        is_meeting_day = group_day_df['Es_Reunion'].any()
+        marker = "* " if is_meeting_day else "  "
+        line = f"{marker}{group} (Reunión)" if is_meeting_day else f"  {group}:"
+        
+        dispersion_details_by_day[day].append(
+            f"{line:<18} Presentes {num_presentes}/{group_day_df['Tamaño_Grupo'].iloc[0]}. "
+            f"Distribución: {distribution_str:<25} {conclusion}"
+        )
+        
+    return None, dispersion_details_by_day

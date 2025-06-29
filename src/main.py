@@ -11,6 +11,13 @@ from optimizer.model.daily_assigner import solve_daily_assignment_model
 from optimizer.heuristics.feedback_loop import evaluate_and_generate_cut # El cerebro de la Etapa 4
 from analysis.analyzer import analyze_solution
 
+# Función auxiliar para el header
+def _print_section_header(title):
+    width = 86
+    print("\n" + "=" * width)
+    print(title.center(width))
+    print("=" * width)
+
 def daily_solver_worker(daily_data):
     """
     Esta es la función "trabajadora". Se encarga de resolver la asignación
@@ -133,7 +140,7 @@ def main():
             model_data, 
             raw_data, 
             anchor_map, 
-            quality_threshold=16  # Se pasa la nueva variable
+            quality_threshold=dynamic_threshold  # Se pasa la nueva variable
         )
         
         # Comparamos si la solución de ESTA iteración es la mejor que hemos visto.
@@ -175,18 +182,21 @@ def main():
             print(f"   -> Total de filtros activos: {len(list_of_cuts)}")
 
     # --- PRESENTACIÓN FINAL ---
-    print("\n----------------------------------------------------")
-    # Si el bucle terminó porque encontró una solución aceptable, la usamos.
+    _print_section_header("R E S U M E N   D E L   P R O C E S O") # Un nuevo header
+    
+    # Si el bucle terminó porque encontró una solución aceptable.
     if final_solution_dict:
-        print("ANÁLISIS DE LA SOLUCIÓN DE ALTA CALIDAD ENCONTRADA:")
-        analyze_solution(final_solution_dict, model_data, raw_data)
+        final_status = f">>> ESTADO FINAL: Solución de Alta Calidad Encontrada (en {i} iteración/es) <<<"
+        analyze_solution(final_solution_dict, model_data, raw_data, final_status)
     # Si el bucle terminó por las 10 iteraciones, usamos la MEJOR que guardamos.
     elif best_solution_so_far:
-        print(f"ANÁLISIS DE LA MEJOR SOLUCIÓN ENCONTRADA DURANTE LAS ITERACIONES (Costo de aislamiento: {best_isolation_cost}):")
-        analyze_solution(best_solution_so_far, model_data, raw_data)
+        final_status = f">>> ESTADO FINAL: Límite de {max_iterations} iteraciones alcanzado. Mostrando la mejor solución encontrada (Costo: {best_isolation_cost}) <<<"
+        # Añadir los anclas a los resultados para que el analyzer los pueda usar
+        best_solution_so_far['anclas'] = anchor_map 
+        analyze_solution(best_solution_so_far, model_data, raw_data, final_status)
     # Si nunca se encontró una solución factible.
     else:
-        print("No se pudo encontrar una solución factible en ninguna de las iteraciones.")
+        print(">>> ESTADO FINAL: No se pudo encontrar una solución factible en ninguna de las iteraciones. <<<")
 
 if __name__ == "__main__":
     main()
