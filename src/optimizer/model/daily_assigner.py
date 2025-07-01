@@ -116,8 +116,8 @@ def solve_daily_assignment_model(daily_data):
 
     # --- Resolver ---
     solver = pyo.SolverFactory('cbc')
-    solver.options['seconds'] = 20 # Límite de 120 segundos por día
-    solver.options['ratioGap'] = 0.05
+    solver.options['seconds'] = 120 # Límite de 120 segundos por día
+    solver.options['ratioGap'] = 0.1
     results = solver.solve(model, tee=False)
 
     term_cond = results.solver.termination_condition
@@ -134,7 +134,6 @@ def solve_daily_assignment_model(daily_data):
         return None, float('inf')
 
     # 1. Extraer los límites del problema resuelto
-    # Usamos try-except por si el solver no reporta los límites
     try:
         # Para un problema de MINIMIZACIÓN:
         # El límite inferior es la mejor cota teórica.

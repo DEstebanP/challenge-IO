@@ -20,7 +20,6 @@ def _create_parameter_S_ek(raw_data, penalty_cost):
     all_days = raw_data.get('Days', [])
     employee_day_preferences = raw_data.get('Days_E', {})
 
-    # Se inicializa el diccionario para el parámetro S_ek
     S_ek = {}
 
     # Se itera sobre cada combinación posible
@@ -57,9 +56,7 @@ def _create_parameter_M_eg(raw_data):
     # Se itera sobre cada combinación de empleado y grupo.
     for e in all_employees:
         for g in all_groups:
-            # A diferencia de los otros parámetros, aquí la fuente de datos
-            # (group_memberships) está organizada por grupo.
-            # Por lo tanto, verificamos si el empleado 'e' está en la lista
+            # Verificamos si el empleado 'e' está en la lista
             # de miembros del grupo 'g'.
             if e in group_memberships.get(g, []):
                 M_eg[(e, g)] = 1

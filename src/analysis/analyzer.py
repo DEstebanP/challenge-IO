@@ -20,9 +20,6 @@ def _get_daily_isolation_incidents(daily_solution_df, raw_data):
     """
     if daily_solution_df is None or daily_solution_df.empty:
         return 0
-
-    # No es necesario enriquecer el DataFrame aquí si ya lo hemos hecho antes.
-    # Pero para mantener la función autocontenida, se espera un df con 'Grupo' y 'Zona'.
     
     # Contar empleados por cada grupo en cada zona
     group_zone_counts = daily_solution_df.groupby(['Grupo', 'Zona']).size()
@@ -93,7 +90,6 @@ def analyze_solution(results, model_data, raw_data, final_status_message):
     total_groups = len(raw_data.get('Groups',[]))
     compat_violations = sum(1 for _, row in df_assignments.iterrows() if row['Escritorio'] not in raw_data.get('Desks_E', {}).get(row['Empleado'], []))
     anchor_map = results.get('anclas', {})
-    anchor_assignments_count = sum(1 for _, row in df_assignments.iterrows() if anchor_map.get(row['Empleado']) == row['Escritorio'])
 
     # --- 3. IMPRESIÓN DEL INFORME ESTRUCTURADO ---
     _print_section_header("R E S U M E N   E J E C U T I V O")
@@ -132,7 +128,6 @@ def analyze_solution(results, model_data, raw_data, final_status_message):
 
     print("\n--- [B. Verificación de Restricciones y Heurísticas] ---")
     print(f"- Cumplimiento de Compatibilidad Escritorio-Empleado: {'CUMPLIDO ✔️' if compat_violations == 0 else f'FALLIDO ({compat_violations} violaciones) ❌'}")
-    print(f"- Uso de Escritorios \"Ancla\" de Referencia: {anchor_assignments_count} de {total_assignments} asignaciones ({anchor_assignments_count/total_assignments:.1%})")
 
     _print_section_header("A N E X O  1:  P L A N   D E   A S I G N A C I Ó N   F I N A L")
     assignment_items = []

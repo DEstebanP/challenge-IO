@@ -24,7 +24,7 @@ def _print_section_header(title):
 def daily_solver_worker(daily_data):
     """
     Esta es la función "trabajadora". Se encarga de resolver la asignación
-    para un único día. Está diseñada para ser ejecutada en un proceso separado.
+    para un único día. Está diseñada para ser ejecutada de forma asíncrona.
     """
     day = daily_data['day']
     num_employees = len(daily_data['sets']['Attending_Employees'])
@@ -57,7 +57,7 @@ def main():
     model_data['params']['w_aislamiento'] = 100
     model_data['params']['w_consistencia'] = 1
     
-    #ETAPA 2: Asignando Escritorios Ancla
+    #ETAPA 1: Asignando Escritorios Ancla
     print("ETAPA 1: Asignando escritorios ancla...")
     anchor_map = assign_anchor_desks(raw_data, risk_data)
 
@@ -130,16 +130,15 @@ def main():
         )
 
         # 3.2. Calcular el 20% del total y redondear hacia abajo (usando int()).
-        dynamic_threshold = int(total_weekly_assignments * 0.18)
+        dynamic_threshold = int(total_weekly_assignments * 0.2)
 
-        # 3.3. Usar el umbral dinámico en la llamada a la función.
         is_solution_acceptable, new_cuts, current_isolation_cost = evaluate_and_generate_cut(
             daily_solutions, 
             schedule_results['horario_semanal'], 
             model_data, 
             raw_data, 
             anchor_map, 
-            quality_threshold=16  # Se pasa la nueva variable
+            quality_threshold=dynamic_threshold  # Se pasa la nueva variable
         )
         
         # Imprime el resumen conciso de la iteración.

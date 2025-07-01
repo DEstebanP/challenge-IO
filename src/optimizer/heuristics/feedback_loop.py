@@ -31,7 +31,6 @@ def run_single_feasibility_test(args):
             'Valid_Daily_Assignments': [(e, d) for (e, d) in model_data['sets']['Valid_Assignments'] if e in test_set]
         },
         'params': {
-            # Filtramos M_eg para que SOLO contenga los empleados del test_set
             'M_eg': { (e,g):v for (e,g),v in model_data['params']['M_eg'].items() if e in test_set },
             'L_dz': model_data['params']['L_dz'],
             'Anchor_Assignments': {e:d for e,d in anchor_map.items() if e in test_set},
@@ -100,7 +99,7 @@ def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_d
     # Un empleado es "inocente" para el conflicto si al quitarlo, la prueba tuvo éxito.
     innocent_employees = [emp for emp, success in results if success]
     
-    # Si la lista de 'esenciales' no está vacía, ESE es nuestro núcleo del conflicto.
+    # Si la lista de 'inocentes' no está vacía, ESE es nuestro núcleo del conflicto.
     if innocent_employees:
         core_conflict =  [emp for emp in problematic_employees if emp not in innocent_employees]
         if len(core_conflict) == 0:
@@ -114,7 +113,7 @@ def _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_d
 
 # --- Main Logic Function ---
 
-def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, raw_data, anchor_map, quality_threshold=10, quality_threshold_day=4):
+def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, raw_data, anchor_map, quality_threshold=40, quality_threshold_day=6):
     """
     Función principal de la Etapa 4. Evalúa la calidad y genera un corte inteligente
     usando procesamiento en paralelo para el diagnóstico.
@@ -138,14 +137,13 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
             daily_costs[day] = {'cost': isolation_count, 'attendees': schedule_candidate.get(day, [])}
             total_isolation_cost += isolation_count
             
-    # 2.A. Preparamos y mostramos el reporte detallado de costos por día
-    # Usamos sorted() para asegurar que los días se impriman en orden
+    # 2. Preparamos y mostramos el reporte detallado de costos por día
     daily_cost_report = ", ".join(
         f"{day}({data['cost'] if data['cost'] != float('inf') else 'INF'})" 
         for day, data in sorted(daily_costs.items())
     )
     
-    # 2. Tomar la decisión
+    # 3. Tomar la decisión
     if total_isolation_cost <= quality_threshold:
         return True, [], total_isolation_cost
     else:
@@ -155,10 +153,8 @@ def evaluate_and_generate_cut(daily_solutions, schedule_candidate, model_data, r
             if data['cost'] > quality_threshold_day:
                 problematic_employees = data['attendees']
                 
-                # Pasamos el costo de ESTE DÍA a la función de diagnóstico.
                 original_daily_cost = data['cost']
                 
-                # Ahora llamamos a nuestra nueva función de diagnóstico.
                 core_conflict = _find_core_conflict_parallel(day, problematic_employees, anchor_map, model_data, raw_data, original_daily_cost)
                 
                 new_cut = {'day': day, 'employees': core_conflict}
