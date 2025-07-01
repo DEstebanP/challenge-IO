@@ -39,9 +39,9 @@ La herramienta desarrollada aborda este desafío mediante una estrategia híbrid
 2. **Ciclo de Retroalimentación y Aprendizaje:**  
    Esta es la característica más potente de la solución. El sistema opera en un ciclo iterativo de **proponer, probar y corregir**:
    
-   - *Propone:* La Etapa 2 genera un horario semanal.  
-   - *Prueba:* La Etapa 3 simula la asignación diaria y evalúa su calidad, midiendo principalmente el *costo de aislamiento*.  
-   - *Aprende:* Si la calidad es deficiente, la Etapa 4 identifica el **núcleo del conflicto** (el grupo de empleados que causa el problema) y genera una nueva restricción o *corte*. Este corte prohíbe esa combinación problemática en la siguiente iteración, forzando al modelo a encontrar una alternativa mejor.
+   - **Propone:** La Etapa 2 genera un horario semanal.  
+   - **Prueba:** La Etapa 3 simula la asignación diaria y evalúa su calidad, midiendo principalmente el *costo de aislamiento*.  
+   - **Aprende:** Si la calidad es deficiente, la Etapa 4 identifica el **núcleo del conflicto** (el grupo de empleados que causa el problema) y genera una nueva restricción o *corte*. Este corte prohíbe esa combinación problemática en la siguiente iteración, forzando al modelo a encontrar una alternativa mejor.
 
 3. **Preparación:**  
    Antes de la optimización, el sistema realiza un **Análisis de Riesgo** para identificar a los empleados \"difíciles\" (con alta probabilidad de quedar aislados) y sus escritorios recomendados. Esta información se utiliza para asignar recursos clave desde el inicio.
